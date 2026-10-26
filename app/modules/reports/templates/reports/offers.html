@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% macro tbl(rows, total, title, label) %}
+<div class="card"><h2>{{ title }} <span class="count">{{ total[0] }}</span></h2>
+<div class="table-wrap"><table class="grid"><thead><tr><th>{{ label }}</th><th>Offers</th><th>Quoted value</th></tr></thead><tbody>
+{% for r in rows %}<tr><td>{{ r.label }}</td><td class="num">{{ r.count }}</td><td class="num">{{ fmt(r.value) }}</td></tr>{% else %}<tr><td colspan="3" class="empty">No offers</td></tr>{% endfor %}
+</tbody><tfoot><tr><td>Total</td><td class="num">{{ total[0] }}</td><td class="num">{{ fmt(total[1]) }}</td></tr></tfoot></table></div></div>
+{% endmacro %}
+{% block content %}
+<h1>Offer summary</h1>
+<form class="report-filters" method="get">
+  <div class="field"><label>Month</label><input type="month" name="month" value="{{ month }}"></div>
+  <div class="field"><label>Group by</label><select name="group">{% for k, l in groups.items() %}<option value="{{ k }}" {% if k == group %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+  <div class="field"><label>Rating</label><select name="rating"><option value="">All</option>{% for r in ratings %}<option {% if args.get('rating') == r %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></div>
+  <div class="field"><label>Region</label><select name="region"><option value="">All</option>{% for r in regions %}<option {% if args.get('region') == r %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></div>
+  <div class="field"><label>Engineer</label><select name="engineer"><option value="">All</option>{% for e in engineers %}<option value="{{ e.id }}" {% if args.get('engineer') == e.id|string %}selected{% endif %}>{{ e.full_name }}</option>{% endfor %}</select></div>
+  <button class="btn primary">Show</button>
+  <a class="btn" href="{{ url_for('reports.offers', **dict(args, xlsx=1)) }}">&#11015; Excel</a>
+  <a class="btn" href="{{ url_for('offers.index', _f=1, f_offer_date_from=start, f_offer_date_to=end, f_is_latest=1) }}">Open these offers</a>
+</form>
+<div class="cards">
+  {{ tbl(month_tbl, month_total, 'Offers in ' ~ month, groups[group]) }}
+  {{ tbl(active_tbl, active_total, 'All active (open) offers', groups[group]) }}
+</div>
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import input, cell %}
+{% block content %}
+<h1>{{ ('Edit ' ~ module.label|lower ~ ': ' ~ module.label_of(row.id)) if row else (module.new_label or 'New ' ~ module.label|lower) }}</h1>
+{% if panel %}<div class="panel">{% for l, v in panel %}<div><span>{{ l }}</span><strong>{{ v }}</strong></div>{% endfor %}</div>{% endif %}
+{% if errors %}<div class="flash error">Please correct the highlighted fields.{% for k, m in errors.items() if k.startswith('__') %}<br>{{ m }}{% endfor %}</div>{% endif %}
+<form method="post" enctype="multipart/form-data" class="card">
+  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+  <input type="hidden" name="_next" value="{{ request.args.get('next', '') }}">
+  {% set ns = namespace(section=None) %}
+  {% for f in module.form_fields %}
+    {% if f.section != ns.section or loop.first %}
+      {% if not loop.first %}</div>{% endif %}
+      {% set ns.section = f.section %}
+      {% if f.section %}<h3>{{ f.section }}</h3>{% endif %}<div class="grid-form">
+    {% endif %}
+    {{ input(f, values.get(f.name), errors.get(f.name), locked=(f.name in locked_refs), editable=module.field_editable(f, g.user),
+             file_value=values.get(f.name) if f.kind == 'file' else None, module=module, parent_id=row.id if row else None) }}
+  {% endfor %}
+  </div>
+
+  {% for cc in child_rows %}{% set c = cc.c %}
+  <h3>{{ c.label }}{% if c.min_rows %}<span class="req">*</span>{% endif %}</h3>
+  {% if errors.get('__child_' ~ c.key) %}<div class="err">{{ errors['__child_' ~ c.key] }}</div>{% endif %}
+  <div class="table-wrap"><table class="grid child" data-child="{{ c.key }}">
+    <thead><tr>{% for f in c.fields %}<th>{{ f.label }}{% if f.required %}<span class="req">*</span>{% endif %}</th>{% endfor %}<th></th></tr></thead>
+    <tbody>
+    {% for r in cc.rows %}{% set i = loop.index0 %}
+      <tr>
+        <input type="hidden" name="{{ c.key }}-{{ i }}-id" value="{{ r.id or '' }}">
+        {% for f in c.fields %}<td>{% set nm = c.key ~ '-' ~ i ~ '-' ~ f.name %}
+          {% if f.kind == 'choice' %}<select name="{{ nm }}"><option value="">--</option>{% for v, l in f.choices %}<option value="{{ v }}" {% if r.vals.get(f.name) == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+          {% elif f.kind == 'file' %}<input type="file" name="{{ nm }}" accept="{{ f.accept|join(',') }}">{% if r.file_values.get(f.name) and r.id %}<a target="_blank" href="{{ url_for(module.key ~ '.file', id=row.id, ckey=c.key, cid=r.id, fname=f.name) }}">current</a>{% endif %}
+          {% elif f.kind == 'date' %}<input type="date" name="{{ nm }}" value="{{ r.vals.get(f.name) or '' }}">
+          {% elif f.kind in ('int','money') %}<input type="number" step="{{ '1' if f.kind == 'int' else '0.01' }}" name="{{ nm }}" value="{{ r.vals.get(f.name) or '' }}">
+          {% else %}<input type="{{ 'email' if f.kind == 'email' else 'tel' if f.kind == 'phone' else 'text' }}" name="{{ nm }}" value="{{ r.vals.get(f.name) or '' }}">{% endif %}
+          {% if errors.get(nm) %}<div class="err">{{ errors[nm] }}</div>{% endif %}
+        </td>{% endfor %}
+        <td><button type="button" class="link danger" data-remove-row>&times;</button></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <template id="tpl-{{ c.key }}"><tr>
+    <input type="hidden" name="{{ c.key }}-__i__-id" value="">
+    {% for f in c.fields %}<td>{% set nm = c.key ~ '-__i__-' ~ f.name %}
+      {% if f.kind == 'choice' %}<select name="{{ nm }}"><option value="">--</option>{% for v, l in f.choices %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select>
+      {% elif f.kind == 'file' %}<input type="file" name="{{ nm }}" accept="{{ f.accept|join(',') }}">
+      {% elif f.kind == 'date' %}<input type="date" name="{{ nm }}">
+      {% elif f.kind in ('int','money') %}<input type="number" step="{{ '1' if f.kind == 'int' else '0.01' }}" name="{{ nm }}">
+      {% else %}<input type="{{ 'email' if f.kind == 'email' else 'tel' if f.kind == 'phone' else 'text' }}" name="{{ nm }}">{% endif %}
+    </td>{% endfor %}
+    <td><button type="button" class="link danger" data-remove-row>&times;</button></td>
+  </tr></template>
+  <button type="button" class="btn small" data-add-row="{{ c.key }}">+ {{ c.add_label }}</button>
+  {% endfor %}
+
+  <div class="actions sticky">
+    <button class="btn primary">Save</button>
+    <a class="btn" href="{{ request.args.get('next') or (url_for(module.key ~ '.view', id=row.id) if row else url_for(module.key ~ '.index')) }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

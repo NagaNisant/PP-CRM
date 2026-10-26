@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import cell, pager %}
+{% block title %}{{ module.plural }} - {{ app_title }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ module.plural }} <span class="count">{{ total }}</span></h1>
+  <div class="actions">
+    {% if can_export %}<a class="btn" href="{{ url_for(module.key ~ '.export', **args) }}">&#11015; Excel</a>{% endif %}
+    {% if can_create %}<a class="btn primary" href="{{ url_for(module.key ~ '.new') }}">+ {{ module.new_label or 'New ' ~ module.label|lower }}</a>{% endif %}
+  </div>
+</div>
+{% if module.intro %}<p class="muted">{{ module.intro }}</p>{% endif %}
+
+<form id="filters" method="get"><input type="hidden" name="_f" value="1">
+  {% if args.get('sort') %}<input type="hidden" name="sort" value="{{ args.get('sort') }}"><input type="hidden" name="dir" value="{{ args.get('dir', 'asc') }}">{% endif %}
+</form>
+<div class="table-wrap">
+<table class="grid">
+  <thead>
+    <tr>{% for f in module.list_fields %}
+      {% set d = 'desc' if args.get('sort') == f.name and args.get('dir', 'asc') == 'asc' else 'asc' %}
+      <th><a class="sort" href="{{ url_for(module.key ~ '.index', **dict(args, sort=f.name, dir=d)) }}">{{ f.label }}{% if args.get('sort') == f.name %} {{ '▲' if args.get('dir','asc') == 'asc' else '▼' }}{% endif %}</a></th>
+    {% endfor %}</tr>
+    <tr class="filters">{% for f in module.list_fields %}<th>
+      {% if f.filterable %}
+        {% set n = 'f_' ~ f.name %}
+        {% if f.kind == 'date' %}
+          <input form="filters" type="date" name="{{ n }}_from" value="{{ args.get(n ~ '_from', '') }}" title="from"><input form="filters" type="date" name="{{ n }}_to" value="{{ args.get(n ~ '_to', '') }}" title="to">
+        {% elif f.kind in ('int', 'money') %}
+          <input form="filters" type="number" step="any" name="{{ n }}_min" placeholder="min" value="{{ args.get(n ~ '_min', '') }}"><input form="filters" type="number" step="any" name="{{ n }}_max" placeholder="max" value="{{ args.get(n ~ '_max', '') }}">
+        {% elif f.kind == 'choice' %}
+          <select form="filters" name="{{ n }}" data-auto><option value="">All</option>{% for v, l in f.choices %}<option value="{{ v }}" {% if args.get(n) == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+        {% elif f.kind == 'bool' %}
+          <select form="filters" name="{{ n }}" data-auto><option value="">All</option><option value="1" {% if args.get(n) == '1' %}selected{% endif %}>Yes</option><option value="0" {% if args.get(n) == '0' %}selected{% endif %}>No</option></select>
+        {% else %}
+          <input form="filters" type="text" name="{{ n }}" placeholder="filter" value="{{ args.get(n, '') }}">
+        {% endif %}
+      {% endif %}
+    </th>{% endfor %}</tr>
+  </thead>
+  <tbody>
+  {% for row in rows %}
+    <tr class="{{ module.row_class(row) if module.row_class else '' }}">
+      {% for f in module.list_fields %}<td>{% if loop.first %}<a href="{{ url_for(module.key ~ '.view', id=row.id) }}">{{ cell(module, f, row) or '—' }}</a>{% else %}{{ cell(module, f, row) }}{% endif %}</td>{% endfor %}
+    </tr>
+  {% else %}<tr><td colspan="{{ module.list_fields|length }}" class="empty">No records match.</td></tr>
+  {% endfor %}
+  </tbody>
+  {% if sums %}<tfoot><tr>{% for f in module.list_fields %}<td class="num">{% if f.summary %}{{ module.display(f, {f.name: sums[f.name]}) }}{% elif loop.first %}Total ({{ total }}){% endif %}</td>{% endfor %}</tr></tfoot>{% endif %}
+</table>
+</div>
+<div class="filter-buttons"><button class="btn" form="filters">Apply filters</button> <a class="btn" href="{{ url_for(module.key ~ '.index', _f=1) }}">Clear</a></div>
+{{ pager(module, page, pages, args) }}
+{% endblock %}

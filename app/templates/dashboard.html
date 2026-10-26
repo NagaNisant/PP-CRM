@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import widget_table %}
+{% block content %}
+<h1>Good day, {{ g.user.full_name.split(' ')[0] }}</h1>
+<p class="muted">Your reminders for today. Colour code: <span class="dot red"></span> due / overdue &nbsp; <span class="dot yellow"></span> due within a week &nbsp; <span class="dot green"></span> received.</p>
+{% if not widgets %}<div class="card">Nothing needs your attention right now.</div>{% endif %}
+<div class="cards">
+{% for w in widgets %}
+  <section class="card {{ w.css }}">
+    <h2>{{ w.title }}{% if w.data.total %} <span class="count">{{ w.data.total }}</span>{% endif %}</h2>
+    {{ widget_table(w) }}
+  </section>
+{% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import cell %}
+{% block title %}{{ module.label }} - {{ app_title }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><a class="crumb" href="{{ url_for(module.key ~ '.index') }}">&larr; {{ module.plural }}</a>
+  <h1>{{ module.label }}: {{ module.label_of(row.id) }}</h1></div>
+  <div class="actions">
+    {% for a in actions %}
+      {% if a.fields or a.prefill %}<a class="btn {{ a.style }}" href="{{ url_for(module.key ~ '.action', id=row.id, akey=a.key) }}">{{ a.label }}</a>
+      {% else %}<form method="post" action="{{ url_for(module.key ~ '.action', id=row.id, akey=a.key) }}" {% if a.confirm %}data-confirm="{{ a.confirm }}"{% endif %}><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="btn {{ a.style }}">{{ a.label }}</button></form>{% endif %}
+    {% endfor %}
+    {% if can_edit %}<a class="btn" href="{{ url_for(module.key ~ '.edit', id=row.id) }}">Edit</a>{% endif %}
+    {% if can_delete %}<form method="post" action="{{ url_for(module.key ~ '.delete', id=row.id) }}" data-confirm="Delete this {{ module.label|lower }}? This cannot be undone."><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="btn danger">Delete</button></form>{% endif %}
+  </div>
+</div>
+{% if panel %}<div class="panel">{% for l, v in panel %}<div><span>{{ l }}</span><strong>{{ v }}</strong></div>{% endfor %}</div>{% endif %}
+
+<div class="card">
+  {% set ns = namespace(section=None, open=false) %}
+  {% for f in module.fields if f.show_in_detail and (f.stored or f.kind != 'password') and f.kind != 'password' %}
+    {% if f.section != ns.section or loop.first %}
+      {% if ns.open %}</dl>{% endif %}
+      {% set ns.section = f.section %}{% set ns.open = true %}
+      {% if f.section %}<h3>{{ f.section }}</h3>{% endif %}<dl class="kv">
+    {% endif %}
+    {% if row.get(f.name) is not none or f.stored %}<div><dt>{{ f.label }}</dt><dd>{{ cell(module, f, row) or '—' }}</dd></div>{% endif %}
+  {% endfor %}
+  {% if ns.open %}</dl>{% endif %}
+
+  {% for cc in children %}
+  <h3>{{ cc.c.label }}</h3>
+  <div class="table-wrap"><table class="grid small"><thead><tr>{% for f in cc.c.fields %}<th>{{ f.label }}</th>{% endfor %}</tr></thead><tbody>
+    {% for r in cc.rows %}<tr>{% for f in cc.c.fields %}<td>{% if f.kind == 'file' %}{% if r[f.name] %}<a target="_blank" href="{{ url_for(module.key ~ '.file', id=row.id, ckey=cc.c.key, cid=r.id, fname=f.name) }}">&#128206; View</a>{% endif %}{% else %}{{ f.display(r[f.name]) }}{% endif %}</td>{% endfor %}</tr>
+    {% else %}<tr><td colspan="{{ cc.c.fields|length }}" class="empty">None</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% endfor %}
+</div>
+
+{% for r in related %}
+<div class="card">
+  <div class="page-head"><h2>{{ r.rel.title or r.module.plural }}</h2>
+    {% if r.can_add %}<a class="btn small primary" href="{{ url_for(r.module.key ~ '.new', **dict({r.rel.fk: row.id}, next=url_for(module.key ~ '.view', id=row.id))) }}">+ {{ r.rel.add_label or 'Add ' ~ r.module.label|lower }}</a>{% endif %}</div>
+  <div class="table-wrap"><table class="grid small"><thead><tr>{% for f in r.columns %}<th>{{ f.label }}</th>{% endfor %}</tr></thead><tbody>
+    {% for rr in r.rows %}<tr class="{{ r.module.row_class(rr) if r.module.row_class else '' }}">{% for f in r.columns %}<td>{% if loop.first %}<a href="{{ url_for(r.module.key ~ '.view', id=rr.id) }}">{{ cell(r.module, f, rr) or '—' }}</a>{% else %}{{ cell(r.module, f, rr) }}{% endif %}</td>{% endfor %}</tr>
+    {% else %}<tr><td colspan="{{ r.columns|length }}" class="empty">Nothing recorded yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
+{% endfor %}
+
+{% if module.comments %}
+<div class="card" id="comments"><h2>Comments</h2>
+  {% for c in comments %}<div class="comment"><strong>{{ c.full_name or 'User' }}</strong> <small>{{ c.created_at }}</small><p>{{ c.body }}</p></div>
+  {% else %}<p class="muted">No comments yet.</p>{% endfor %}
+  {% if can_comment %}<form method="post" action="{{ url_for(module.key ~ '.comment', id=row.id) }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><textarea name="body" rows="2" placeholder="Add a comment..." required></textarea><button class="btn">Post comment</button></form>{% endif %}
+</div>
+{% endif %}
+<div class="meta">Created {{ row.created_at }} &middot; last updated {{ row.updated_at }}</div>
+{% endblock %}

@@ -1,0 +1,80 @@
+{# Shared rendering macros: value display + form inputs.  Change how a field type looks HERE only. #}
+
+{% macro cell(module, f, row) -%}
+  {%- if f.kind == 'file' -%}
+    {%- if row[f.name] -%}<a href="{{ url_for(module.key ~ '.file', id=row.id, fname=f.name) }}" target="_blank">&#128206; View</a>{%- endif -%}
+  {%- elif f.badge -%}
+    {%- set v = module.display(f, row) -%}{%- if v -%}<span class="badge b-{{ v|slug }}">{{ v }}</span>{%- endif -%}
+  {%- elif f.kind in ('money', 'int') -%}<span class="num">{{ module.display(f, row) }}</span>
+  {%- elif f.kind == 'textarea' -%}<span class="clip">{{ module.display(f, row) }}</span>
+  {%- else -%}{{ module.display(f, row) }}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro suggest_attrs(f) -%}
+  {%- if f.suggest %} data-suggest-url="{{ f.suggest.url }}" data-fills='{{ f.suggest.fills|tojson }}' autocomplete="off"{% endif -%}
+{%- endmacro %}
+
+{% macro input(f, value, error=None, name=None, locked=False, editable=True, file_value=None, module=None, row_id=None, ckey=None, parent_id=None) %}
+  {%- set n = name or f.name -%}
+  <div class="field {% if f.kind in ('textarea','multichoice') %}wide{% endif %} {% if error %}has-error{% endif %}">
+    <label for="{{ n }}">{{ f.label }}{% if f.required and editable %}<span class="req">*</span>{% endif %}</label>
+    {%- if not editable -%}
+      <div class="static">{% if f.kind == 'ref' %}{{ (f.options()|selectattr(0, 'equalto', value|int(-1))|first or ('',''))[1] }}{% elif f.kind == 'choice' %}{{ f.display(value) }}{% elif f.kind == 'date' %}{{ value|date }}{% else %}{{ value or '' }}{% endif %}</div>
+    {%- elif locked -%}
+      <input type="hidden" name="{{ n }}" value="{{ value }}">
+      <div class="static">{{ (f.options()|selectattr(0, 'equalto', value|int(-1))|first or ('',''))[1] }}</div>
+    {%- elif f.kind == 'textarea' -%}
+      <textarea id="{{ n }}" name="{{ n }}" rows="3" placeholder="{{ f.placeholder }}">{{ value or '' }}</textarea>
+    {%- elif f.kind == 'choice' -%}
+      <select id="{{ n }}" name="{{ n }}"><option value="">-- select --</option>
+        {% for v, l in f.choices %}<option value="{{ v }}" {% if v == value %}selected{% endif %}>{{ l }}</option>{% endfor %}
+      </select>
+    {%- elif f.kind == 'multichoice' -%}
+      <div class="checks">{% set chosen = (value or '').split(',') %}
+        {% for v, l in f.choices %}<label class="check"><input type="checkbox" name="{{ n }}" value="{{ v }}" {% if v in chosen %}checked{% endif %}> {{ l }}</label>{% endfor %}
+      </div>
+    {%- elif f.kind == 'ref' -%}
+      <select id="{{ n }}" name="{{ n }}"><option value="">-- select --</option>
+        {% for v, l in f.options() %}<option value="{{ v }}" {% if value|string == v|string %}selected{% endif %}>{{ l }}</option>{% endfor %}
+      </select>
+    {%- elif f.kind == 'bool' -%}
+      <label class="check"><input type="checkbox" id="{{ n }}" name="{{ n }}" value="1" {% if value %}checked{% endif %}> Yes</label>
+    {%- elif f.kind == 'date' -%}
+      <input type="date" id="{{ n }}" name="{{ n }}" value="{{ value or '' }}">
+    {%- elif f.kind in ('int', 'money') -%}
+      <input type="number" id="{{ n }}" name="{{ n }}" value="{{ value or '' }}" step="{{ '1' if f.kind == 'int' else '0.01' }}" {% if f.min is not none %}min="{{ f.min }}"{% endif %} placeholder="{{ f.placeholder }}">
+    {%- elif f.kind == 'file' -%}
+      <input type="file" id="{{ n }}" name="{{ n }}" accept="{{ f.accept|join(',') }}">
+      {% if file_value %}<div class="hint">Current: <a target="_blank" href="{{ url_for(module.key ~ '.file', id=parent_id, ckey=ckey, cid=row_id, fname=f.name) if ckey else url_for(module.key ~ '.file', id=parent_id, fname=f.name) }}">{{ file_value.split('_',1)[-1] }}</a> (choose a file to replace)</div>{% endif %}
+    {%- elif f.kind == 'password' -%}
+      <input type="password" id="{{ n }}" name="{{ n }}" autocomplete="new-password">
+    {%- else -%}
+      <input type="{{ 'email' if f.kind == 'email' else 'tel' if f.kind == 'phone' else 'text' }}" id="{{ n }}" name="{{ n }}" value="{{ value or '' }}" placeholder="{{ f.placeholder }}" {% if f.max_length %}maxlength="{{ f.max_length }}"{% endif %}{{ suggest_attrs(f) }}>
+    {%- endif -%}
+    {% if f.help %}<div class="hint">{{ f.help }}</div>{% endif %}
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  </div>
+{% endmacro %}
+
+{% macro pager(module, page, pages, args) %}
+  {% if pages > 1 %}
+  <div class="pager">
+    {% for p in range(1, pages + 1) %}
+      {% if p == page %}<span class="cur">{{ p }}</span>
+      {% elif p <= 2 or p > pages - 2 or (p - page)|abs <= 2 %}<a href="{{ url_for(module.key ~ '.index', **dict(args, page=p)) }}">{{ p }}</a>
+      {% elif (p - page)|abs == 3 %}<span>…</span>{% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+{% endmacro %}
+
+{% macro widget_table(w) %}
+  {% if w.data.stats %}
+    <div class="stats">{% for label, val in w.data.stats %}<div class="stat"><div class="v">{{ val }}</div><div class="l">{{ label }}</div></div>{% endfor %}</div>
+  {% else %}
+    <div class="table-wrap"><table class="grid small"><thead><tr>{% for c in w.data.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+    <tbody>{% for r in w.data.rows %}<tr class="{{ r.cls or '' }}">{% for c in r.cells %}<td>{% if loop.first %}<a href="{{ r.url }}">{{ c or '—' }}</a>{% else %}{{ c }}{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
+    {% if w.data.more %}<div class="hint">+ {{ w.data.more }} more</div>{% endif %}
+  {% endif %}
+{% endmacro %}

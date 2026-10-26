@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import input %}
+{% block content %}
+<h1>{{ act.label }}</h1>
+<p class="muted">{{ module.label }}: {{ module.label_of(row.id) }}</p>
+<form method="post" class="card narrow" enctype="multipart/form-data">
+  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+  {% for f in act.fields %}{{ input(f, values.get(f.name), errors.get(f.name), module=module) }}{% endfor %}
+  {% if not act.fields %}<p>{{ act.confirm or 'Please confirm.' }}</p>{% endif %}
+  <div class="actions"><button class="btn primary {{ act.style }}">{{ act.label }}</button>
+  <a class="btn" href="{{ url_for(module.key ~ '.view', id=row.id) }}">Cancel</a></div>
+</form>
+{% endblock %}

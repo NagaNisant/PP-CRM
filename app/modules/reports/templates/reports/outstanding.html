@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Receivable as of {{ today.strftime('%d-%m-%Y') }}</h1>
+<p class="muted">Only invoices whose payment is due on or before today are counted - later instalments are never projected into this figure.</p>
+<form class="report-filters" method="get">
+  <div class="field"><label>Group by</label><select name="by"><option value="region" {% if by == 'region' %}selected{% endif %}>Region</option><option value="customer" {% if by == 'customer' %}selected{% endif %}>Customer</option></select></div>
+  <label class="check"><input type="checkbox" name="future" value="1" {% if future %}checked{% endif %}> also show not-yet-due balance (information only)</label>
+  <button class="btn primary">Show</button>
+  <a class="btn" href="{{ url_for('reports.outstanding', by=by, future=1 if future else 0, xlsx=1) }}">&#11015; Excel</a>
+</form>
+<div class="table-wrap"><table class="grid"><thead><tr><th>{{ 'Customer' if by == 'customer' else 'Region' }}</th><th>Invoices due</th><th>Receivable today</th>{% if future %}<th>Not yet due (info)</th>{% endif %}</tr></thead><tbody>
+{% for d in table %}<tr><td>{{ d.label }}</td><td class="num">{{ d.invoices }}</td><td class="num">{{ fmt(d.receivable) }}</td>{% if future %}<td class="num">{{ fmt(d.future) }}</td>{% endif %}</tr>
+{% else %}<tr><td colspan="4" class="empty">Nothing is due.</td></tr>{% endfor %}
+</tbody><tfoot><tr><td>Total</td><td class="num">{{ totals.invoices }}</td><td class="num">{{ fmt(totals.receivable) }}</td>{% if future %}<td class="num">{{ fmt(totals.future) }}</td>{% endif %}</tr></tfoot></table></div>
+{% endblock %}
