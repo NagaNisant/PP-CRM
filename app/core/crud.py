@@ -14,9 +14,10 @@ def _empty(f, v):
     return f.is_empty(v)
 
 
-def _read_group(fields, form, files, prefix, old, user, module, editable=lambda f: True):
+def _read_group(fields, form, files, prefix, old, user, module, editable=lambda f: True, use_defaults=False):
     """Read + clean a group of fields. Returns (data, raw, errors)."""
     data, raw, errors = {}, {}, {}
+    defaults = module.defaults(user) if use_defaults else {}
     for f in fields:
         if not editable(f):
             if f.stored:
@@ -31,6 +32,8 @@ def _read_group(fields, form, files, prefix, old, user, module, editable=lambda 
             v = None
         if isinstance(f, File) and v is None and old is not None:
             v = old.get(f.name)
+        if v is None and old is None and f.name in defaults:      # blank on create -> fall back to the field default
+            v = defaults[f.name]
         data[f.name] = v
     return data, raw, errors
 
@@ -45,7 +48,7 @@ def process_form(module, old, user):
     """Shared by create & edit. Returns dict(ok, data, values, errors, child_rows)."""
     form, files = request.form, request.files
     editable = lambda f: module.field_editable(f, user)
-    data, raw, errors = _read_group(module.form_fields, form, files, "", old, user, module, editable)
+    data, raw, errors = _read_group(module.form_fields, form, files, "", old, user, module, editable, use_defaults=old is None)
     child_data = {}
     for c in module.children:
         rows = []
