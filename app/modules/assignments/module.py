@@ -2,7 +2,7 @@
 from app import choices as C
 from app.core import roles as R
 from app.core.fields import Choice, Date, Phone, Ref, Text, TextArea
-from app.core.module import Module, Widget
+from app.core.module import Action, Module, Widget
 from app.core.util import SQL_TODAY, today_iso
 from app.core.widgets import rows_widget
 
@@ -44,6 +44,11 @@ def row_class(row):
     return "row-green" if row["status"] == "Done" else None
 
 
+def complete(row, user, data):
+    module.set(row["id"], status=data["status"], feedback=data["feedback"])
+    return "Marked as %s - the head can see your feedback." % data["status"].lower()
+
+
 def w_mine(user):
     return rows_widget(module, user, where="status = 'Assigned' AND work_date <= " + SQL_TODAY, order="work_date",
                        columns=["work_date", "kind", "customer_name", "purpose"], cls=row_class)
@@ -55,5 +60,9 @@ module = Module(
     scope=scope, row_permission=row_permission, before_save=before_save, comments=True, comment_roles=ENG_PLUS,
     list_fields=["work_date", "assigned_to", "kind", "customer_name", "purpose", "status", "feedback"],
     default_order="work_date DESC, id DESC", row_class=row_class, nav=("Field work", 20), new_label="Assign work",
+    actions=[Action("complete", "Mark done / give feedback", complete, roles=ENG_PLUS, style="good",
+                    when=lambda r, u: r["status"] == "Assigned",
+                    fields=[Choice("status", "Outcome", choices=["Done", "Could not complete"], required=True, default="Done"),
+                            TextArea("feedback", "Feedback on the work carried out", required=True)])],
     widgets=[Widget("assign_mine", "Work assigned to you (today / pending)", w_mine, roles=R.ENGINEERS, order=15)],
 )
