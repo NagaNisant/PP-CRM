@@ -64,4 +64,111 @@
         });
     }, 220);
   });
+
+  // Customer selection in New Offer
+  var selCust = document.querySelector('select[name="select_customer"]');
+  if (selCust) {
+    selCust.addEventListener('change', function () {
+      var val = selCust.value.trim();
+      if (!val) return;
+      var custInput = document.querySelector('[name="cust_name"]');
+      if (custInput) {
+        custInput.value = val;
+      }
+      fetch('/customers/suggest?field=cust_name&q=' + encodeURIComponent(val), { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (items) {
+          if (!items || !items.length) return;
+          var it = items[0];
+          ['cust_address', 'person_name', 'designation', 'mobile', 'landline', 'email'].forEach(function (k) {
+            var el = document.querySelector('[name="' + k + '"]');
+            if (el && it[k]) el.value = it[k];
+          });
+          if (typeof triggerDraftSave === 'function') triggerDraftSave();
+        });
+    });
+  }
+
+  // Automatic Draft Saving for New Offers
+  var draftBar = document.getElementById('draft-bar');
+  var offerForm = draftBar ? draftBar.closest('main').querySelector('form') : null;
+  var draftTimer = null;
+
+  function triggerDraftSave() {
+    if (!offerForm) return;
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(saveOfferDraft, 1200);
+  }
+
+  function saveOfferDraft() {
+    if (!offerForm) return;
+    var draftText = document.getElementById('draft-text');
+    var draftTime = document.getElementById('draft-time');
+    if (draftText) draftText.textContent = 'Saving draft...';
+
+    var fd = new FormData(offerForm);
+    var fdClean = new FormData();
+    for (var pair of fd.entries()) {
+      if (pair[1] instanceof File) continue;
+      fdClean.append(pair[0], pair[1]);
+    }
+
+    fetch('/offers/save-draft', {
+      method: 'POST',
+      body: fdClean,
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: 'same-origin'
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res && res.ok) {
+          if (draftText) draftText.textContent = 'Draft auto-saved';
+          if (draftTime) {
+            var d = new Date();
+            draftTime.textContent = '(' + d.toLocaleTimeString() + ')';
+          }
+        }
+      })
+      .catch(function () {
+        if (draftText) draftText.textContent = 'Draft auto-save active';
+      });
+  }
+
+  if (offerForm && draftBar) {
+    fetch('/offers/get-draft', { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res && res.has_draft) {
+          var draftText = document.getElementById('draft-text');
+          var draftTime = document.getElementById('draft-time');
+          if (draftText) draftText.textContent = 'Draft restored';
+          if (draftTime && res.updated_at) draftTime.textContent = '(' + res.updated_at + ')';
+        }
+      });
+
+    offerForm.addEventListener('input', triggerDraftSave);
+    offerForm.addEventListener('change', triggerDraftSave);
+
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') {
+        saveOfferDraft();
+      }
+    });
+    window.addEventListener('beforeunload', saveOfferDraft);
+    window.addEventListener('pagehide', saveOfferDraft);
+
+    var btnDiscard = document.getElementById('btn-discard-draft');
+    if (btnDiscard) {
+      btnDiscard.addEventListener('click', function () {
+        if (!confirm('Discard this draft? All unsaved changes will be lost.')) return;
+        var csrf = (offerForm.querySelector('input[name="_csrf"]') || {}).value || '';
+        var fd = new FormData();
+        fd.append('_csrf', csrf);
+        fetch('/offers/discard-draft', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' })
+          .then(function () {
+            window.location.href = '/offers/new';
+          });
+      });
+    }
+  }
 })();

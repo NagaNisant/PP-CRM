@@ -64,7 +64,7 @@ class Module:
                  before_delete=None, after_delete=None, extra_values=None, prefill=None,
                  actions=(), related=(), widgets=(), nav=("Sales", 50), comments=False,
                  panel=None, row_class=None, routes=None, intro=None, indexes=(),
-                 export_override=None, new_label=None, comment_roles=R.ALL):
+                 export_override=None, new_label=None, comment_roles=R.ALL, list_actions=()):
         self.key, self.label = key, label
         self.plural = plural or label + "s"
         self.table = table or key
@@ -89,6 +89,7 @@ class Module:
         self.nav, self.comments = nav, comments
         self.panel, self.row_class, self.routes, self.intro = panel, row_class, routes, intro
         self.indexes, self.export_override, self.new_label = indexes, export_override, new_label
+        self.list_actions = tuple(list_actions)      # action keys shown as buttons on every list row
         self.by_name = {f.name: f for f in self.fields}
 
     # ------------------------------------------------------------ schema

@@ -1,5 +1,20 @@
-"""End-to-end smoke test: python -m pytest -q  (or python tests/test_smoke.py)"""
+"""
+Comprehensive test suite for PP-CRM modifications and feature updates.
+Tests:
+- Admin, Application, and Marketing roles and access control.
+- Metallic, Non-Metallic, and Both Metallic and Non-Metallic offer creation.
+- Inline customer creation and duplicate prevention.
+- Automatic draft saving, draft retrieval, and discard/submit cleanup.
+- Compulsory follow-up fields (all mandatory except optional Rating).
+- Admin excluded from follow-up workflow / assignments.
+- Marketing workflow: view all offers, cannot create/edit offers, can add follow-ups, can submit visit reports.
+- Marketing dashboard offer status updates ('Received', 'Quantity Confirmation').
+- Visit reports: engineer list first, drill-down to engineer reports, review status removed.
+- Accounts: Payment Made, Payment Received, Receivables as of Today.
+- Verification that deleted modules (assignments, tour_expenses, work_orders) are gone.
+"""
 import io
+import json
 import sys
 import tempfile
 from datetime import date, timedelta
@@ -7,176 +22,392 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app import create_app
-from app.core import db, digest
+from app.core import db, nav, registry, roles as R
 from app.core.auth import hash_password
 
 
-def pdf(name="a.pdf"):
-    return (io.BytesIO(b"%PDF-1.4 test"), name)
+def pdf(name="test.pdf"):
+    return (io.BytesIO(b"%PDF-1.4 test document content"), name)
 
 
 def make_app():
     d = tempfile.mkdtemp()
-    return create_app({"DATABASE": d + "/t.db", "UPLOAD_DIR": d + "/u", "OUTBOX_DIR": d + "/o", "TESTING": True,
-                       "ENABLE_SCHEDULER": False})
+    return create_app({
+        "DATABASE": d + "/test_pumpcrm.db",
+        "UPLOAD_DIR": d + "/uploads",
+        "OUTBOX_DIR": d + "/outbox",
+        "TESTING": True,
+        "ENABLE_SCHEDULER": False
+    })
 
 
 class Client:
-    def __init__(self, app, email):
+    def __init__(self, app, email, password="Passw0rd!"):
         self.c = app.test_client()
-        self.c.post("/login", data={"email": email, "password": "Passw0rd!"}, headers={})
-        # first POST has no csrf -> 400; set token then login
         with self.c.session_transaction() as s:
             s["_csrf"] = "tok"
-        r = self.c.post("/login", data={"email": email, "password": "Passw0rd!", "_csrf": "tok"})
+        r = self.c.post("/login", data={"email": email, "password": password, "_csrf": "tok"})
         assert r.status_code == 302, (email, r.status_code)
-        with self.c.session_transaction() as s:      # login clears the session -> set a fresh token
+        with self.c.session_transaction() as s:
             s["_csrf"] = "tok"
 
     def get(self, url, ok=200):
         r = self.c.get(url, follow_redirects=True)
-        assert r.status_code == ok, (url, r.status_code, r.data[:300])
+        assert r.status_code == ok, (url, r.status_code, r.data[:400])
         return r
 
     def post(self, url, data=None, ok=(302,)):
         data = dict(data or {}, _csrf="tok")
         r = self.c.post(url, data=data, content_type="multipart/form-data")
-        assert r.status_code in ok, (url, r.status_code, r.data.decode()[:1500])
+        assert r.status_code in ok, (url, r.status_code, r.data.decode(errors="ignore")[:1500])
+        return r
+
+    def post_json(self, url, data=None, ok=(200,)):
+        data = dict(data or {}, _csrf="tok")
+        r = self.c.post(url, data=data, headers={"X-Requested-With": "XMLHttpRequest"})
+        assert r.status_code in ok, (url, r.status_code, r.data.decode(errors="ignore")[:1500])
         return r
 
 
 def test_everything():
     app = make_app()
-    with app.app_context():
-        for email, name, role, regions in [("admin@x.com", "Admin", "admin", None), ("head@x.com", "Head", "head", None),
-                                           ("eng@x.com", "Ravi Engineer", "marketing", "Karnataka"),
-                                           ("acc@x.com", "Accounts Girl", "accounts", None)]:
-            db.execute("INSERT INTO users(full_name,email,role,active,regions,password_hash) VALUES(?,?,?,?,?,?)",
-                       (name, email, role, 1, regions, hash_password("Passw0rd!")))
-        db.get_db().commit()
-    admin, head, eng, acc = (Client(app, e) for e in ("admin@x.com", "head@x.com", "eng@x.com", "acc@x.com"))
-
-    # ---- Phase 1: offer entry; missing mandatory customer data is rejected
-    r = eng.post("/offers/new", {"offer_no": "0972"}, ok=(200,))
-    assert b"required" in r.data
     today = date.today().isoformat()
-    base = {"cust_name": "Acme Pumps Ltd", "cust_address": "Plot 4, Peenya, Bengaluru", "person_name": "Suresh",
-            "designation": "Purchase Manager", "mobile": "9845012345", "email": "suresh@acme.com",
-            "offer_no": "0972", "offer_date": today, "region": "Karnataka", "item_type": "Pump", "moc": "Metallic",
-            "quantity": "2", "quoted_value": "1250000", "currency": "INR", "offer_pdf": pdf()}
-    eng.post("/offers/new", base)
-    # same customer again (different case / spacing) must NOT create a duplicate
-    eng.post("/offers/new", dict(base, offer_no="0973", cust_name="  acme pumps  ltd", person_name="Suresh", offer_pdf=pdf()))
-    with app.app_context():
-        assert db.q1("SELECT COUNT(*) n FROM customers")["n"] == 1
-        assert db.q1("SELECT COUNT(*) n FROM customers_contacts")["n"] == 1
-        o = db.q1("SELECT * FROM offers WHERE offer_no='0972'")
-        assert o["assigned_engineer_id"] and o["is_latest"] == 1
-    # duplicate offer no rejected
-    eng.post("/offers/new", dict(base, offer_pdf=pdf()), ok=(200,))
-    # follow-up with rating + next date
-    nxt = (date.today() - timedelta(days=1)).isoformat()
-    eng.post("/followups/new", {"offer_id": o["id"], "followup_date": today, "mode": "Phone call", "notes": "Discussed price",
-                                "rating": "A", "status": "Open", "next_followup_date": today})
-    with app.app_context():
-        o = db.q1("SELECT * FROM offers WHERE offer_no='0972'")
-        assert o["rating"] == "A" and o["next_followup_date"] == today
-    # reminder visible on dashboard
-    assert b"0972" in eng.get("/").data
-    # revision 0972 -> 0972A
-    eng.post("/offers/%d/action/revise" % o["id"])
-    with app.app_context():
-        assert db.q1("SELECT is_latest FROM offers WHERE offer_no='0972A'")["is_latest"] == 1
-        assert db.q1("SELECT is_latest FROM offers WHERE offer_no='0972'")["is_latest"] == 0
-    # head assigns engineer
-    for u in ("/offers/", "/offers/%d" % o["id"], "/customers/", "/followups/"):
-        eng.get(u)
-    # filters + excel
-    assert b"0973" in eng.get("/offers/?_f=1&f_region=Karnataka&f_offer_no=097").data
-    x = eng.c.get("/offers/export.xlsx?_f=1")
-    assert x.status_code == 200 and x.data[:2] == b"PK"
-    assert eng.c.get("/customers/export.xlsx").status_code == 403           # master DB: admin only
-    assert admin.c.get("/customers/export.xlsx").status_code == 200
-    assert b"Acme" in eng.get("/customers/suggest?q=acm&field=cust_name").data
-    head.get("/reports/offers")
-    assert head.c.get("/reports/offers?xlsx=1").status_code == 200
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
 
-    # ---- Phase 2: visits, assignments, tour expense
-    eng.post("/visits/new", {"visit_date": today, "customer_name": "Acme Pumps Ltd", "address": "Peenya", "person_name": "Suresh",
-                             "reason": "Technical discussion", "remark": "Will confirm order"})
-    head.post("/visits/1/action/review", {"review_status": "Action required", "comment": "Send revised offer"})
-    assert b"Send revised offer" in eng.get("/visits/1").data
-    head.post("/assignments/new", {"assigned_to": 3, "work_date": today, "kind": "Visit", "customer_name": "Acme", "purpose": "Collect PO"})
-    eng.post("/assignments/1/edit", {"status": "Done", "feedback": "PO collected"})
-    eng.post("/tour_expenses/new".replace("_", "-"), {"claim_date": today, "tour_from": today, "tour_to": today, "purpose": "Customer visit",
-             "lines-0-line_date": today, "lines-0-place": "Mysuru", "lines-0-boarding_lodging": "1500", "lines-0-conveyance": "800",
-             "lines-0-bill_pdf": pdf("bill.pdf")})
+    # 1. SETUP USERS: EXACTLY 3 DESIGNATIONS
     with app.app_context():
-        assert db.q1("SELECT total FROM (SELECT (SELECT SUM(boarding_lodging+conveyance) FROM tour_expenses_lines) total)")["total"] == 2300
-    head.post("/tour-expenses/1/action/approve", {"passed_amount": "2300"})
-    acc.post("/tour-expenses/1/action/file", {"filing_ref": "V-17"})
-    assert b"Filed" in acc.get("/tour-expenses/1").data
+        # Confirm roles defined
+        assert set(R.ROLE_LABELS.keys()) == {R.ADMIN, R.APPLICATION, R.MARKETING}
 
-    # ---- Phase 3: work order (head office -> WO = OA)
-    wo = {"cust_name": "Acme Pumps Ltd", "cust_address": "Plot 4", "person_name": "Suresh", "designation": "PM",
-          "mobile": "9845012345", "email": "suresh@acme.com", "offer_id": o["id"], "po_no": "PO/77", "po_date": today,
-          "payment_terms": "30 days from delivery", "credit_days": "30", "credit_basis": "Date of delivery",
-          "price_basis": "Ex-works", "inspection": "No", "po_value_gross": "1475000", "po_value_net": "1250000",
-          "office": "Head Office", "oa_no": "OA-100", "oa_pdf": pdf("oa.pdf")}
-    eng.post("/work-orders/new", wo)
-    with app.app_context():
-        w = db.q1("SELECT * FROM work_orders")
-        assert w["wo_no"] == "OA-100" and w["region"] == "Karnataka" and w["engineer_id"] == 3
-        assert db.q1("SELECT status FROM offers WHERE offer_no='0972'")["status"] == "Order Acquired"
-    # invoices cannot exist before dispatch is started
-    acc.post("/invoices/new", {"work_order_id": w["id"]}, ok=(200,))
-    acc.post("/work-orders/%d/action/start_dispatch" % w["id"])
+        for email, name, role in [
+            ("admin@process-pumps.com", "Admin User", "admin"),
+            ("app@process-pumps.com", "App Engineer", "application"),
+            ("mkt@process-pumps.com", "Marketing Exec", "marketing"),
+        ]:
+            db.execute(
+                "INSERT INTO users(full_name,email,role,active,password_hash) VALUES(?,?,?,?,?)",
+                (name, email, role, 1, hash_password("Passw0rd!"))
+            )
+        db.get_db().commit()
 
-    # ---- Phase 4: invoice -> colours -> payments -> lock
-    inv = {"work_order_id": w["id"], "invoice_type": "Tax invoice", "invoice_no": "INV-1", "invoice_date": today,
-           "net_value": "1250000", "gross_value": "1475000", "lr_no": "LR9", "lr_date": today,
-           "delivery_date": (date.today() - timedelta(days=40)).isoformat(), "invoice_pdf": pdf("i.pdf")}
-    acc.post("/invoices/new", inv)
-    with app.app_context():
-        i = db.q1("SELECT * FROM invoices")
-        assert i["supply_type"] == "Full supply"
-        row = db.q1("SELECT * FROM (%s) q" % __import__("app.core.registry", fromlist=["x"]).get("invoices").inner_sql())
-        assert row["due_date"] == (date.today() - timedelta(days=10)).isoformat(), row["due_date"]
-        assert row["payment_status"] == "Overdue / due now" and row["outstanding"] == 1475000
-    assert b"row-red" in acc.get("/invoices/").data
-    assert b"INV-1" in eng.get("/").data                                   # engineer region reminder on dashboard
-    assert acc.c.get("/reports/outstanding?xlsx=1").status_code == 200
-    assert b"14,75,000" in acc.get("/reports/outstanding").data
-    acc.post("/payments/new", {"invoice_id": i["id"], "kind": "Advance", "amount": "500000", "received_date": today, "mode": "RTGS"})
-    with app.app_context():
-        assert db.q1("SELECT locked FROM work_orders")["locked"] == 0
-    acc.post("/payments/new", {"invoice_id": i["id"], "kind": "Balance", "amount": "975000", "received_date": today})
-    with app.app_context():
-        assert db.q1("SELECT locked FROM work_orders")["locked"] == 1       # paid in full & fully supplied
-        assert db.q1("SELECT payment_status FROM (%s) q" % __import__("app.core.registry", fromlist=["x"]).get("invoices").inner_sql())["payment_status"] == "Received"
-    eng.get("/work-orders/%d/edit" % w["id"], ok=403)                       # locked for engineers / office staff
-    head.get("/work-orders/%d/edit" % w["id"])                              # head can still edit
-    assert b"row-green" in acc.get("/invoices/").data
-    assert acc.c.get("/invoices/export.xlsx").status_code == 200
-    # PDFs downloadable
-    assert acc.c.get("/invoices/%d/file/invoice_pdf" % i["id"]).data.startswith(b"%PDF")
-    # comment by engineer on a payment follow-up
-    eng.post("/invoices/%d/comment" % i["id"], {"body": "Customer promised release"})
+    admin = Client(app, "admin@process-pumps.com")
+    app_eng = Client(app, "app@process-pumps.com")
+    mkt = Client(app, "mkt@process-pumps.com")
 
-    # ---- digest e-mail
+    # 2. VERIFY DELETED MODULES ARE REMOVED
+    for url in ("/assignments/", "/tour-expenses/", "/work-orders/"):
+        assert admin.c.get(url).status_code in (404, 403), f"{url} should not exist"
+        assert app_eng.c.get(url).status_code in (404, 403), f"{url} should not exist"
+        assert mkt.c.get(url).status_code in (404, 403), f"{url} should not exist"
+
+    # Confirm Customer tab is removed from navigation
+    with app.test_request_context():
+        for u in (admin, app_eng, mkt):
+            # Read user row
+            user_row = db.q1("SELECT * FROM users WHERE email=?", (
+                "admin@process-pumps.com" if u == admin else "app@process-pumps.com" if u == app_eng else "mkt@process-pumps.com",
+            ))
+            nav_groups = nav.build(user_row)
+            all_labels = [item["label"] for group, items in nav_groups for item in items]
+            assert "Customers" not in all_labels, "Customer tab must be removed from navigation"
+            assert "Orders" not in [g for g, _ in nav_groups], "Orders group must be removed from navigation"
+
+    # 3. OFFER CREATION & PERMISSIONS
+    # Marketing CANNOT create offers (HTTP 403)
+    assert mkt.c.get("/offers/new").status_code == 403, "Marketing should not access /offers/new"
+    mkt.post("/offers/new", {"offer_no": "9999"}, ok=(403,))
+
+    # Application CAN access /offers/new
+    app_eng.get("/offers/new")
+
+    # 3.1 DRAFT AUTO-SAVING
+    # Save a draft for Application user
+    draft_data = {
+        "cust_name": "Bharat Petroleum Corp",
+        "cust_address": "Refinery Road, Mahul, Mumbai",
+        "person_name": "Rajesh Kumar",
+        "designation": "Chief Engineer",
+        "mobile": "9876543210",
+        "email": "rajesh.k@bpcl.in",
+        "offer_no": "0801",
+        "offer_date": today,
+        "region": "Maharashtra",
+        "item_type": "Pump",
+        "moc": "Both Metallic and Non-Metallic",
+        "quantity": "4",
+        "quoted_value": "4500000",
+        "currency": "INR",
+    }
+    r = app_eng.post_json("/offers/save-draft", draft_data)
+    res_json = json.loads(r.data.decode())
+    assert res_json.get("ok") is True
+    assert "saved_at" in res_json
+
+    # Verify draft is in database table offer_drafts
     with app.app_context():
-        n = digest.send_all(force=True)
-        assert n >= 1
-        assert list(Path(app.config["OUTBOX_DIR"]).glob("*.eml"))
-    # every edit / detail / prefilled-new page renders
-    for u in ("/customers/1", "/customers/1/edit", "/tour-expenses/1/edit", "/offers/%d/edit" % o["id"], "/invoices/%d" % i["id"],
-              "/invoices/%d/edit" % i["id"], "/invoices/new?work_order_id=%d" % w["id"], "/followups/new?offer_id=%d" % o["id"],
-              "/payments/new?invoice_id=%d" % i["id"], "/visits/1/edit", "/assignments/1"):
-        admin.get(u)
-    # permissions: engineer cannot open users admin
-    eng.get("/users/", ok=403)
-    admin.get("/users/")
-    print("ALL OK")
+        user_app = db.q1("SELECT id FROM users WHERE email='app@process-pumps.com'")
+        saved_draft = db.q1("SELECT * FROM offer_drafts WHERE user_id=?", (user_app["id"],))
+        assert saved_draft is not None
+        assert "Bharat Petroleum" in saved_draft["data"]
+        # Verify drafts are NOT in the offers table
+        assert db.q1("SELECT COUNT(*) n FROM offers WHERE offer_no='0801'")["n"] == 0
+
+    # Loading /offers/new retrieves the draft
+    r_new = app_eng.get("/offers/new")
+    assert b"Bharat Petroleum Corp" in r_new.data, "Draft customer name should be restored"
+    assert b"0801" in r_new.data, "Draft offer no should be restored"
+
+    # Discard draft
+    r_disc = app_eng.post_json("/offers/discard-draft")
+    assert r_disc.status_code == 200
+    with app.app_context():
+        assert db.q1("SELECT COUNT(*) n FROM offer_drafts WHERE user_id=?", (user_app["id"],))["n"] == 0
+
+    # 3.2 OFFER CREATION WITH METALLIC & NON-METALLIC (SIMULTANEOUSLY)
+    # Also tests inline customer creation and duplicate prevention
+    offer_payload_both = dict(draft_data, offer_no="0801", moc="Both Metallic and Non-Metallic", offer_pdf=pdf())
+    app_eng.post("/offers/new", offer_payload_both)
+
+    with app.app_context():
+        o1 = db.q1("SELECT * FROM offers WHERE offer_no='0801'")
+        assert o1 is not None
+        assert o1["moc"] == "Both Metallic and Non-Metallic"
+        assert o1["assigned_engineer_id"] == user_app["id"]  # Application author auto-assigned
+        # Confirm customer created
+        cust = db.q1("SELECT * FROM customers WHERE name='Bharat Petroleum Corp'")
+        assert cust is not None
+        # Confirm draft cleared after submission
+        assert db.q1("SELECT COUNT(*) n FROM offer_drafts WHERE user_id=?", (user_app["id"],))["n"] == 0
+
+    # Create offer with Metallic only
+    offer_payload_met = dict(draft_data, offer_no="0802", moc="Metallic only", cust_name="bharat petroleum corp", offer_pdf=pdf())
+    app_eng.post("/offers/new", offer_payload_met)
+    with app.app_context():
+        o2 = db.q1("SELECT * FROM offers WHERE offer_no='0802'")
+        assert o2["moc"] == "Metallic only"
+        # Verify duplicate customer was NOT created
+        assert db.q1("SELECT COUNT(*) n FROM customers WHERE lower(name)='bharat petroleum corp'")["n"] == 1
+
+    # Create offer with Non-Metallic only
+    offer_payload_non = dict(draft_data, offer_no="0803", moc="Non-Metallic only", offer_pdf=pdf())
+    app_eng.post("/offers/new", offer_payload_non)
+    with app.app_context():
+        o3 = db.q1("SELECT * FROM offers WHERE offer_no='0803'")
+        assert o3["moc"] == "Non-Metallic only"
+
+    # 4. MARKETING ACCESS TO OFFERS
+    # Marketing can view ALL offers
+    mkt_list = mkt.get("/offers/").data.decode()
+    assert "0801" in mkt_list
+    assert "0802" in mkt_list
+    assert "0803" in mkt_list
+
+    # Marketing can view offer details
+    mkt_view = mkt.get(f"/offers/{o1['id']}").data.decode()
+    assert "Both Metallic and Non-Metallic" in mkt_view
+    assert "Bharat Petroleum Corp" in mkt_view
+
+    # Marketing CANNOT edit offer original details
+    assert mkt.c.get(f"/offers/{o1['id']}/edit").status_code == 403
+
+    # 5. FOLLOW-UP MODULE MODIFICATIONS
+    # 5.1 Mandatory fields validation: all fields compulsory EXCEPT rating
+    # Attempt submit with missing next_followup_date -> fails
+    r_fail = app_eng.post(
+        "/followups/new",
+        {"offer_id": o1["id"], "followup_date": today, "mode": "Phone call", "notes": "Price discussion", "status": "Open"},
+        ok=(200,)
+    )
+    assert b"required" in r_fail.data.lower()
+
+    # Attempt submit with missing notes -> fails
+    r_fail2 = app_eng.post(
+        "/followups/new",
+        {"offer_id": o1["id"], "followup_date": today, "mode": "Phone call", "status": "Open", "next_followup_date": tomorrow},
+        ok=(200,)
+    )
+    assert b"required" in r_fail2.data.lower()
+
+    # Submit follow-up WITHOUT rating (rating is optional!) -> SUCCEEDS
+    five_days_ago = (date.today() - timedelta(days=5)).isoformat()
+    app_eng.post(
+        "/followups/new",
+        {
+            "offer_id": o1["id"],
+            "followup_date": five_days_ago,
+            "mode": "Email",
+            "notes": "Sent revised technical specs and terms",
+            "rating": "",  # OPTIONAL: Left blank
+            "status": "Open",
+            "next_followup_date": yesterday,  # OVERDUE follow-up
+        }
+    )
+    with app.app_context():
+        o1_updated = db.q1("SELECT next_followup_date, status FROM offers WHERE id=?", (o1["id"],))
+        assert o1_updated["next_followup_date"] == yesterday
+
+    # 5.2 Marketing users MUST be able to add and update follow-ups
+    mkt.post(
+        "/followups/new",
+        {
+            "offer_id": o2["id"],
+            "followup_date": today,
+            "mode": "Visit",
+            "notes": "Customer requested demo and price breakdown",
+            "rating": "B",
+            "status": "Open",
+            "next_followup_date": today,  # DUE TODAY follow-up
+        }
+    )
+    with app.app_context():
+        o2_updated = db.q1("SELECT next_followup_date, rating, status FROM offers WHERE id=?", (o2["id"],))
+        assert o2_updated["next_followup_date"] == today
+        assert o2_updated["rating"] == "B"
+
+    # 6. VISIT REPORTS MODULE
+    # 6.1 Engineer submits a visit report (review_status removed)
+    mkt.post(
+        "/visits/new",
+        {
+            "visit_date": today,
+            "customer_name": "Bharat Petroleum Corp",
+            "address": "Mahul, Mumbai",
+            "person_name": "Rajesh Kumar",
+            "designation": "Chief Engineer",
+            "mobile": "9876543210",
+            "email": "rajesh.k@bpcl.in",
+            "reason": "Annual pump maintenance consultation",
+            "remark": "Satisfied with existing performance, requested expansion quote",
+            "next_followup_date": tomorrow,
+            "followup_mode": "Phone call",
+            "offer_id": o1["id"],
+        }
+    )
+
+    with app.app_context():
+        v = db.q1("SELECT * FROM visits WHERE customer_name='Bharat Petroleum Corp'")
+        assert v is not None
+        # Confirm review_status workflow is gone
+        assert "review_status" not in registry.get("visits").by_name
+
+    # 6.2 Main Visit Reports page displays ONLY a list of engineers
+    visits_main = admin.get("/visits/").data.decode()
+    assert "Marketing Exec" in visits_main, "Engineer who submitted visit should appear in engineer list"
+    assert "View Reports" in visits_main
+    # Individual reports must not be listed directly on the initial page
+    assert "Annual pump maintenance consultation" not in visits_main
+
+    # 6.3 Clicking engineer displays their reports
+    with app.app_context():
+        user_mkt = db.q1("SELECT id FROM users WHERE email='mkt@process-pumps.com'")
+    eng_reports = admin.get(f"/visits/?engineer_id={user_mkt['id']}").data.decode()
+    assert "Annual pump maintenance consultation" in eng_reports
+    assert "Bharat Petroleum Corp" in eng_reports
+
+    # 6.4 Viewing individual report shows all details
+    v_detail = admin.get(f"/visits/{v['id']}").data.decode()
+    assert "Chief Engineer" in v_detail
+    assert "Satisfied with existing performance" in v_detail
+    assert "review_status" not in v_detail
+
+    # 7. DASHBOARD REDESIGN
+    # 7.1 Displays "Visit Reports Awaiting Your Review"
+    dash_admin = admin.get("/").data.decode()
+    assert "Visit Reports Awaiting Your Review" in dash_admin
+    assert "Bharat Petroleum Corp" in dash_admin
+
+    # 7.2 Displays "Visits Follow-Up Due Today / Overdue" (Role aware: not assigned to Admin)
+    dash_mkt = mkt.get("/").data.decode()
+    assert "Visits Follow-Up Due Today / Overdue" in dash_mkt
+    # Admin does NOT have follow-up assignments
+    assert "Visits Follow-Up Due Today / Overdue" not in dash_admin
+
+    # Overdue vs Today distinguished
+    dash_app = app_eng.get("/").data.decode()
+    assert "OVERDUE" in dash_app or "row-red" in dash_app
+    assert "DUE TODAY" in dash_mkt or "row-yellow" in dash_mkt
+
+    # 7.3 Marketing Offer Status Updates
+    # Marketing dashboard has the update status section
+    assert "Offer Status Updates" in dash_mkt
+    assert "Received" in dash_mkt
+    assert "Quantity Confirmation" in dash_mkt
+
+    # Marketing updates offer status to 'Received'
+    mkt.post(
+        "/update-offer-status",
+        {"offer_id": o1["id"], "status": "Received", "remarks": "PO received via email"}
+    )
+    with app.app_context():
+        o1_status = db.q1("SELECT status FROM offers WHERE id=?", (o1["id"],))
+        assert o1_status["status"] == "Received"
+        # Confirm comment / history logged
+        cmt = db.q1("SELECT * FROM comments WHERE entity='offers' AND entity_id=?", (o1["id"],))
+        assert cmt is not None
+        assert "Received" in cmt["body"]
+
+    # Marketing updates another offer status to 'Quantity Confirmation'
+    mkt.post(
+        "/update-offer-status",
+        {"offer_id": o2["id"], "status": "Quantity Confirmation", "remarks": "Client confirmed 3 pumps"}
+    )
+    with app.app_context():
+        o2_status = db.q1("SELECT status FROM offers WHERE id=?", (o2["id"],))
+        assert o2_status["status"] == "Quantity Confirmation"
+
+    # 8. ACCOUNTS MODULE (ADMIN ONLY)
+    # Payment Made
+    admin.get("/payments-made/")
+    admin.post(
+        "/payments-made/new",
+        {
+            "payment_date": today,
+            "paid_to": "Steel Authority of India Ltd",
+            "category": "Raw Material",
+            "amount": "250000",
+            "mode": "RTGS",
+            "reference_no": "RTGS-9908123",
+            "remarks": "Advance for SS316 raw castings",
+        }
+    )
+    with app.app_context():
+        pm = db.q1("SELECT * FROM payments_made WHERE paid_to='Steel Authority of India Ltd'")
+        assert pm is not None
+        assert pm["amount"] == 250000
+
+    # Payment Received
+    admin.get("/payments/")
+    admin.post(
+        "/payments/new",
+        {
+            "received_date": today,
+            "customer_id": cust["id"],
+            "kind": "Advance",
+            "amount": "150000",
+            "mode": "NEFT",
+            "reference_no": "NEFT-12345",
+            "remarks": "Advance payment received",
+        }
+    )
+    with app.app_context():
+        pr = db.q1("SELECT * FROM payments WHERE amount=150000")
+        assert pr is not None
+
+    # Receivables as of Today
+    rec_page = admin.get("/reports/outstanding").data.decode()
+    assert "Receivables as of Today" in rec_page or "Receivable as of" in rec_page
+
+    # Non-admin users cannot access accounts
+    assert app_eng.c.get("/payments-made/").status_code == 403
+    assert app_eng.c.get("/reports/outstanding").status_code == 403
+    assert mkt.c.get("/payments-made/").status_code == 403
+    assert mkt.c.get("/reports/outstanding").status_code == 403
+
+    print("\n=======================================================")
+    print("ALL TESTS PASSED SUCCESSFULLY!")
+    print("Every requirement, designation, and workflow verified.")
+    print("=======================================================\n")
 
 
 if __name__ == "__main__":

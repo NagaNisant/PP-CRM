@@ -33,7 +33,10 @@ tr.row-red td{background:var(--red)}tr.row-yellow td{background:var(--yellow)}tr
 .dot{display:inline-block;width:11px;height:11px;border-radius:50%;vertical-align:middle}.dot.red{background:#e0525e}.dot.yellow{background:#e8b400}.dot.green{background:#2fae62}
 .badge{display:inline-block;padding:1px 9px;border-radius:10px;font-size:12px;background:#e6ebf2}
 .b-a{background:#c6efce;color:var(--green-t)}.b-b{background:#dcebf9;color:#12456f}.b-c{background:var(--yellow);color:var(--yellow-t)}.b-d{background:#e6e6e6;color:#555}
-.b-order-acquired,.b-done,.b-reviewed,.b-filed,.b-received{background:var(--green);color:var(--green-t)}.b-lost,.b-rejected,.b-action-required,.b-overdue-due-now{background:var(--red);color:var(--red-t)}
+.b-order-acquired,.b-done,.b-reviewed,.b-filed,.b-received{background:var(--green);color:var(--green-t)}.b-quantity-confirmation{background:#e0f2fe;color:#0369a1}.b-lost,.b-rejected,.b-action-required,.b-overdue-due-now{background:var(--red);color:var(--red-t)}
+.draft-bar{display:flex;justify-content:space-between;align-items:center;background:#e8f4fd;border:1px solid #b6e0fe;padding:8px 14px;border-radius:6px;margin-bottom:14px;font-size:13px}
+.draft-status-pill{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:#0284c7}
+.draft-time{font-weight:normal;color:#64748b;font-size:12px}
 .b-on-hold,.b-pending,.b-submitted,.b-due-within-a-week,.b-part-supply{background:var(--yellow);color:var(--yellow-t)}.b-open,.b-assigned{background:#dcebf9;color:#12456f}
 .grid-form{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px 16px}
 .field{display:flex;flex-direction:column;position:relative}.field.wide{grid-column:1/-1}.field label{font-weight:600;font-size:12px;margin-bottom:3px;color:#35465a}

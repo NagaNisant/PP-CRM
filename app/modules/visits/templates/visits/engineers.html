@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+  <div>
+    <h1>Visit Reports</h1>
+    <p class="muted">Engineers who have submitted customer visit reports. Select an engineer to view their reports.</p>
+  </div>
+  {% if can_create %}
+    <a class="btn primary" href="{{ url_for('visits.new') }}">+ Enter visit</a>
+  {% endif %}
+</div>
+
+<div class="table-wrap">
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>Engineer Name</th>
+        <th>Designation</th>
+        <th>E-mail</th>
+        <th class="num">Reports Submitted</th>
+        <th>Last Visit Date</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for eng in engineers %}
+      <tr>
+        <td>
+          <a href="{{ url_for('visits.index', engineer_id=eng.id) }}" style="font-weight: 600; font-size: 14px;">
+            &#128100; {{ eng.full_name }}
+          </a>
+        </td>
+        <td><span class="badge b-open">{{ ROLE_LABELS.get(eng.role, eng.role|title) }}</span></td>
+        <td>{{ eng.email }}</td>
+        <td class="num"><strong>{{ eng.report_count }}</strong></td>
+        <td>{{ eng.last_visit_date|date if eng.last_visit_date else '—' }}</td>
+        <td>
+          <a class="btn small" href="{{ url_for('visits.index', engineer_id=eng.id) }}">
+            View Reports &rarr;
+          </a>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="6" class="empty">No visit reports have been submitted yet.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

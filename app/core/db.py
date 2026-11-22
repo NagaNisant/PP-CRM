@@ -15,6 +15,11 @@ CREATE TABLE IF NOT EXISTS comments (
     entity TEXT NOT NULL, entity_id INTEGER NOT NULL,
     user_id INTEGER, body TEXT NOT NULL, created_at TEXT);
 CREATE INDEX IF NOT EXISTS idx_comments_entity ON comments(entity, entity_id);
+CREATE TABLE IF NOT EXISTS offer_drafts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL UNIQUE,
+    data TEXT NOT NULL,
+    updated_at TEXT NOT NULL);
 """
 
 

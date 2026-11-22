@@ -1,22 +1,25 @@
 """
 roles.py - the ONE place that defines user roles and role groups.
-Modules refer to the groups below in their `access=` dictionaries.
+The CRM has ONLY THREE user designations: Admin, Application, Marketing.
 Admin is implicitly allowed everything, so it never needs listing.
 """
-ADMIN, HEAD, APPLICATION, MARKETING, ACCOUNTS, DESIGN = (
-    "admin", "head", "application", "marketing", "accounts", "design")
+ADMIN, APPLICATION, MARKETING = ("admin", "application", "marketing")
 
 ROLE_LABELS = {
-    ADMIN: "Admin", HEAD: "Head of dept", APPLICATION: "Application",
-    MARKETING: "Marketing", ACCOUNTS: "Accounts", DESIGN: "Design",
+    ADMIN: "Admin",
+    APPLICATION: "Application",
+    MARKETING: "Marketing",
 }
 ROLE_CHOICES = list(ROLE_LABELS.items())          # (value, label)
 
 ALL = "*"                                          # everybody who is logged in
-ENGINEERS = [MARKETING, APPLICATION]               # field engineers (get assignments, visits, reminders)
-APPROVERS = [HEAD]                                 # head (+ admin) review / approve / assign
-ACCOUNTS_TEAM = [ACCOUNTS]
-OFFICE_STAFF = [HEAD, MARKETING, APPLICATION]      # may create offers, orders, customers
+ENGINEERS = [APPLICATION, MARKETING]               # Application & Marketing
+
+# Transitional aliases for any legacy references
+HEAD = ADMIN
+ACCOUNTS = ADMIN
+DESIGN = APPLICATION
+OFFICE_STAFF = [APPLICATION]
 
 
 def role_of(user):
@@ -25,6 +28,14 @@ def role_of(user):
 
 def is_admin(user):
     return role_of(user) == ADMIN
+
+
+def is_application(user):
+    return role_of(user) == APPLICATION
+
+
+def is_marketing(user):
+    return role_of(user) == MARKETING
 
 
 def is_engineer(user):

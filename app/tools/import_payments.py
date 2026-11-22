@@ -12,7 +12,9 @@ import re
 import openpyxl
 from app.core import db, registry
 from app.core.util import parse_date
-from app.modules.work_orders.module import refresh_lock
+
+def refresh_lock(wid):
+    pass
 
 COLS = dict(wo=0, customer=1, po_no=2, po_date=3, terms=4, region=5, inspection=6, slip=7, inv_no=9, inv_date=10,
             value=11, adv_info=12, adv_amt=13, adv_date=14, bal_info=15, bal_amt=16, bal_date=17, transporter=19,

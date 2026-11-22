@@ -24,3 +24,10 @@ __pycache__/
 .idea/
 .DS_Store
 Thumbs.db
+
+# CRM database and uploaded documents
+instance/*.db
+instance/*.sqlite
+instance/*.sqlite3
+instance/uploads/
+instance/outbox/

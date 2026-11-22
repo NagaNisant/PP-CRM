@@ -20,7 +20,7 @@
     <tr>{% for f in module.list_fields %}
       {% set d = 'desc' if args.get('sort') == f.name and args.get('dir', 'asc') == 'asc' else 'asc' %}
       <th><a class="sort" href="{{ url_for(module.key ~ '.index', **dict(args, sort=f.name, dir=d)) }}">{{ f.label }}{% if args.get('sort') == f.name %} {{ '▲' if args.get('dir','asc') == 'asc' else '▼' }}{% endif %}</a></th>
-    {% endfor %}</tr>
+    {% endfor %}{% if module.list_actions %}<th>Action</th>{% endif %}</tr>
     <tr class="filters">{% for f in module.list_fields %}<th>
       {% if f.filterable %}
         {% set n = 'f_' ~ f.name %}
@@ -36,14 +36,15 @@
           <input form="filters" type="text" name="{{ n }}" placeholder="filter" value="{{ args.get(n, '') }}">
         {% endif %}
       {% endif %}
-    </th>{% endfor %}</tr>
+    </th>{% endfor %}{% if module.list_actions %}<th></th>{% endif %}</tr>
   </thead>
   <tbody>
   {% for row in rows %}
     <tr class="{{ module.row_class(row) if module.row_class else '' }}">
       {% for f in module.list_fields %}<td>{% if loop.first %}<a href="{{ url_for(module.key ~ '.view', id=row.id) }}">{{ cell(module, f, row) or '—' }}</a>{% else %}{{ cell(module, f, row) }}{% endif %}</td>{% endfor %}
+      {% if module.list_actions %}<td>{% for a in row_actions(row) %}<a class="btn small {{ a.style }}" href="{{ url_for(module.key ~ '.action', id=row.id, akey=a.key) }}">{{ a.label }}</a> {% endfor %}</td>{% endif %}
     </tr>
-  {% else %}<tr><td colspan="{{ module.list_fields|length }}" class="empty">No records match.</td></tr>
+  {% else %}<tr><td colspan="{{ module.list_fields|length + (1 if module.list_actions else 0) }}" class="empty">No records match.</td></tr>
   {% endfor %}
   </tbody>
   {% if sums %}<tfoot><tr>{% for f in module.list_fields %}<td class="num">{% if f.summary %}{{ module.display(f, {f.name: sums[f.name]}) }}{% elif loop.first %}Total ({{ total }}){% endif %}</td>{% endfor %}</tr></tfoot>{% endif %}

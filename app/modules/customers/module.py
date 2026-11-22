@@ -16,11 +16,23 @@ SUGGEST = dict(url="/customers/suggest", fills={k: k for k in (
     "cust_name", "cust_address", "person_name", "designation", "mobile", "landline", "email")})
 
 
+def existing_customer_choices():
+    try:
+        rows = db.q("SELECT name, region FROM customers ORDER BY name COLLATE NOCASE")
+        return [("", "-- Select Existing Customer (or enter new customer below) --")] + [
+            (r["name"], "%s%s" % (r["name"], " (" + r["region"] + ")" if r["region"] else "")) for r in rows
+        ]
+    except Exception:
+        return [("", "-- Select Existing Customer (or enter new customer below) --")]
+
+
 def customer_block(section="Customer & contact person"):
     """Virtual (not stored on the record) fields; resolve_customer() turns them into customer + contact rows."""
     return [
+        Choice("select_customer", "Select existing customer", choices=existing_customer_choices,
+               stored=False, section=section, help="Select an existing customer to auto-fill details, or leave blank to enter a new customer below."),
         Text("cust_name", "Customer name", required=True, stored=False, section=section, suggest=SUGGEST,
-             help="Start typing - existing customers are suggested so you do not create duplicates."),
+             help="Existing customer name or new customer name. Matching is case-insensitive so no duplicates are created."),
         TextArea("cust_address", "Customer address", required=True, stored=False, section=section),
         Text("person_name", "Contact person", required=True, stored=False, section=section, suggest=SUGGEST),
         Text("designation", "Designation", required=True, stored=False, section=section),
@@ -32,10 +44,16 @@ def customer_block(section="Customer & contact person"):
 
 def resolve_customer(data, user_id, region=None):
     """Find-or-create the customer and contact described by the block. Returns (customer_id, contact_id)."""
-    name = " ".join((data.get("cust_name") or "").split())
-    cust = db.q1("SELECT id FROM customers WHERE lower(trim(name)) = lower(?)", (name,))
-    cid = cust["id"] if cust else module.insert(
-        {"name": name, "address": data.get("cust_address"), "region": region}, user_id)
+    name = " ".join((data.get("cust_name") or data.get("select_customer") or "").split())
+    cust = db.q1("SELECT id, address, region FROM customers WHERE lower(trim(name)) = lower(?)", (name,))
+    if cust:
+        cid = cust["id"]
+        # Update address if provided
+        if data.get("cust_address") and data.get("cust_address") != cust.get("address"):
+            db.execute("UPDATE customers SET address=? WHERE id=?", (data.get("cust_address"), cid))
+    else:
+        cid = module.insert(
+            {"name": name, "address": data.get("cust_address"), "region": region}, user_id)
     contact = contacts_child()
     vals = {k: data.get(k) for k in ("person_name", "designation", "mobile", "landline", "email")}
     hit = db.q1('SELECT id FROM customers_contacts WHERE customers_id=? AND (lower(email)=lower(?) OR lower(person_name)=lower(?))',
@@ -67,7 +85,6 @@ FIELDS = [
     TextArea("address", "Address", required=True),
     Choice("region", "Region", choices=C.REGIONS),
     Computed("offer_count", "Offers", sql="(SELECT COUNT(*) FROM offers o WHERE o.customer_id = t.id)", value="int", list=True),
-    Computed("order_count", "Orders", sql="(SELECT COUNT(*) FROM work_orders w WHERE w.customer_id = t.id)", value="int", list=True),
 ]
 
 CONTACTS = Child("contacts", "Contact persons", [
@@ -108,13 +125,18 @@ def routes(bp):
             cust_name=r["name"], cust_address=r["address"], person_name=r["person_name"], designation=r["designation"],
             mobile=r["mobile"], landline=r["landline"], email=r["email"]) for r in rows])
 
+    @bp.route("/all-json")
+    def all_json():
+        rows = db.q("SELECT id, name, address, region FROM customers ORDER BY name COLLATE NOCASE")
+        return jsonify([dict(id=r["id"], name=r["name"], address=r["address"], region=r["region"]) for r in rows])
+
 
 module = Module(
     "customers", "Customer", FIELDS, children=[CONTACTS], plural="Customers",
-    access={"view": R.ALL, "create": R.OFFICE_STAFF, "edit": R.OFFICE_STAFF, "delete": [], "export": []},
-    list_fields=["name", "address", "region", "offer_count", "order_count"],
+    access={"view": R.ALL, "create": [R.APPLICATION], "edit": [R.APPLICATION], "delete": [], "export": []},
+    list_fields=["name", "address", "region", "offer_count"],
     default_order="name COLLATE NOCASE", prepare=prepare, export_override=export_override,
-    routes=routes, nav=("Sales", 5),
+    routes=routes, nav=None,
     intro="The master customer database. Customers are created automatically when an offer is entered; "
           "only the admin can download the full database.",
 )

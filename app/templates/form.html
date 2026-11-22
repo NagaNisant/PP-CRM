@@ -2,6 +2,12 @@
 {% from '_macros.html' import input, cell %}
 {% block content %}
 <h1>{{ ('Edit ' ~ module.label|lower ~ ': ' ~ module.label_of(row.id)) if row else (module.new_label or 'New ' ~ module.label|lower) }}</h1>
+{% if module.key == 'offers' and not row %}
+  <div id="draft-bar" class="draft-bar">
+    <span class="draft-status-pill">&#128190; <span id="draft-text">Draft autosave active</span> <span id="draft-time" class="draft-time"></span></span>
+    <button type="button" id="btn-discard-draft" class="btn small" style="background:#fff; color:#c62828; border:1px solid #e57373;">Discard draft</button>
+  </div>
+{% endif %}
 {% if panel %}<div class="panel">{% for l, v in panel %}<div><span>{{ l }}</span><strong>{{ v }}</strong></div>{% endfor %}</div>{% endif %}
 {% if errors %}<div class="flash error">Please correct the highlighted fields.{% for k, m in errors.items() if k.startswith('__') %}<br>{{ m }}{% endfor %}</div>{% endif %}
 <form method="post" enctype="multipart/form-data" class="card">

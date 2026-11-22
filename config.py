@@ -31,16 +31,16 @@ class Config:
     DATE_DISPLAY = "%d-%m-%Y"
     PAGE_SIZE = 50
     BASE_URL = os.environ.get("BASE_URL", "http://localhost:5000")  # used in e-mail links
-    NAV_GROUPS = ["Sales", "Field work", "Orders", "Accounts", "Reports", "Admin"]
+    NAV_GROUPS = ["Sales", "Field work", "Accounts", "Admin"]
 
-    # ---- payment reminders (Phase 4) -----------------------------------
+    # ---- payment reminders ----------------------------------------------
     DUE_SOON_DAYS = 7          # "payment due in a week" -> yellow
 
-    # ---- daily e-mail digest (Phase 1: 7:00 AM) ------------------------
+    # ---- daily e-mail digest (7:00 AM) ----------------------------------
     ENABLE_SCHEDULER = _bool("ENABLE_SCHEDULER", True)
     DIGEST_HOUR = int(os.environ.get("DIGEST_HOUR", 7))
     DIGEST_MINUTE = int(os.environ.get("DIGEST_MINUTE", 0))
-    DIGEST_ROLES = ["marketing", "application", "accounts", "head", "admin"]
+    DIGEST_ROLES = ["marketing", "application"]
     DIGEST_SEND_EMPTY = False  # skip people who have nothing pending
 
     # ---- SMTP (if SMTP_HOST is empty, mails are written to OUTBOX_DIR) --

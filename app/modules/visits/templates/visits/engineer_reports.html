@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block content %}
+<div style="margin-bottom: 1rem;">
+  <a class="btn small" href="{{ url_for('visits.index') }}" style="margin-bottom: 0.5rem; display: inline-block;">
+    &larr; Back to Engineer List
+  </a>
+  <div style="display: flex; justify-content: space-between; align-items: center;">
+    <div>
+      <h1>Visit Reports: {{ engineer.full_name }}</h1>
+      <p class="muted">
+        Role: <strong>{{ ROLE_LABELS.get(engineer.role, engineer.role|title) }}</strong> &nbsp;|&nbsp;
+        Total Reports: <strong>{{ reports|length }}</strong>
+      </p>
+    </div>
+    {% if can_create %}
+      <a class="btn primary" href="{{ url_for('visits.new') }}">+ Enter visit</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="table-wrap">
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>Visit Date</th>
+        <th>Customer</th>
+        <th>Person Met</th>
+        <th>Reason of Visit</th>
+        <th>Remark / Summary</th>
+        <th>Next Follow-up</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in reports %}
+      <tr>
+        <td><strong>{{ r.visit_date|date }}</strong></td>
+        <td>
+          <a href="{{ url_for('visits.view', id=r.id) }}" style="font-weight: 600;">
+            {{ r.customer_name }}
+          </a>
+          {% if r.offer_no %}
+            <br><small class="muted">Offer: {{ r.offer_no }}</small>
+          {% endif %}
+        </td>
+        <td>
+          {{ r.person_name }}
+          {% if r.designation %}<br><small class="muted">{{ r.designation }}</small>{% endif %}
+        </td>
+        <td>{{ r.reason }}</td>
+        <td><span class="clip" title="{{ r.remark }}">{{ r.remark }}</span></td>
+        <td>{{ r.next_followup_date|date if r.next_followup_date else '—' }}</td>
+        <td>
+          <a class="btn small" href="{{ url_for('visits.view', id=r.id) }}">
+            View Details &rarr;
+          </a>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="7" class="empty">No visit reports submitted by this engineer.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

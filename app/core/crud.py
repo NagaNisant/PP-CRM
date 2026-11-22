@@ -135,10 +135,11 @@ def _form_values(module, row, user, args=None):
         src.update(row)
         if module.extra_values:
             src.update(module.extra_values(row))
-    elif args:
-        src.update({k: v for k, v in args.items() if k in module.by_name})
+    else:
+        if args:
+            src.update({k: v for k, v in args.items() if k in module.by_name})
         if module.prefill:
-            src.update(module.prefill(dict(args), user) or {})
+            src.update(module.prefill(dict(args or {}), user) or {})
     for f in module.form_fields:
         vals[f.name] = f.to_form(src.get(f.name)) if f.kind != "file" else src.get(f.name)
     return vals, src
@@ -179,6 +180,8 @@ def make_blueprint(module):
     @bp.route("/")
     def index():
         need("view")
+        if getattr(module, "index_handler", None):
+            return module.index_handler(request, g.user)
         args = request.args
         if "_f" not in args and module.default_filters:
             args = {**{"f_" + k: v for k, v in module.default_filters.items()}, **args.to_dict()}
@@ -187,7 +190,12 @@ def make_blueprint(module):
         res = module.query(g.user, filters=args, sort=args.get("sort"), direction=args.get("dir", "asc"),
                            page=page, per_page=per)
         pages = max((res["total"] + per - 1) // per, 1)
-        return render_template("list.html", module=module, rows=res["rows"], total=res["total"], sums=res["sums"],
+
+        def row_actions(row):
+            return [a for a in module.actions if a.key in module.list_actions
+                    and R.has_role(g.user, a.roles if a.roles is not None else module.access["edit"])
+                    and (not a.when or a.when(row, g.user))]
+        return render_template("list.html", module=module, row_actions=row_actions, rows=res["rows"], total=res["total"], sums=res["sums"],
                                page=page, pages=pages, args=args,
                                can_create=module.can("create", g.user), can_export=module.allowed("export", g.user))
 

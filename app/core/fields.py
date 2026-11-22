@@ -135,7 +135,13 @@ class Money(Field):
         return v
 
     def to_form(self, value):
-        return "" if value is None else ("%g" % value if float(value).is_integer() else "%.2f" % value)
+        if value in (None, ""):
+            return ""
+        try:
+            num = float(str(value).replace(",", "").strip())
+            return "%g" % num if num.is_integer() else "%.2f" % num
+        except (ValueError, TypeError):
+            return str(value)
 
     def display(self, value):
         return fmt_money(value)
@@ -174,11 +180,40 @@ class Choice(Field):
     def clean(self, raw):
         if raw in (None, ""):
             return None
+        if self.name == "moc":
+            r_str = str(raw).strip()
+            if r_str in ("Metallic", "Metallic only"):
+                return "Metallic only"
+            if r_str in ("Non metallic", "Non-Metallic", "Non-Metallic only"):
+                return "Non-Metallic only"
+            if r_str in ("Both", "Both Metallic and Non-Metallic", "Both Metallic & Non-Metallic"):
+                return "Both Metallic and Non-Metallic"
         if raw not in [v for v, _ in self.choices]:
             raise FieldError("Choose one of the listed options")
         return raw
 
+    def to_form(self, value):
+        if value is None:
+            return ""
+        if self.name == "moc":
+            v_str = str(value).strip()
+            if v_str in ("Metallic", "Metallic only"):
+                return "Metallic only"
+            if v_str in ("Non metallic", "Non-Metallic", "Non-Metallic only"):
+                return "Non-Metallic only"
+            if v_str in ("Both", "Both Metallic and Non-Metallic", "Both Metallic & Non-Metallic"):
+                return "Both Metallic and Non-Metallic"
+        return str(value)
+
     def display(self, value):
+        if self.name == "moc":
+            v_str = str(value).strip()
+            if v_str in ("Metallic", "Metallic only"):
+                return "Metallic only"
+            if v_str in ("Non metallic", "Non-Metallic", "Non-Metallic only"):
+                return "Non-Metallic only"
+            if v_str in ("Both", "Both Metallic and Non-Metallic", "Both Metallic & Non-Metallic"):
+                return "Both Metallic and Non-Metallic"
         return dict(self.choices).get(value, value or "")
 
 

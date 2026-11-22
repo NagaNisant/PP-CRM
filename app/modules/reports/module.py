@@ -36,7 +36,7 @@ def _pivot(rows, group):
 
 @bp.route("/offers")
 def offers():
-    if not R.has_role(g.user, [R.HEAD]):
+    if not R.has_role(g.user, [R.ADMIN]):
         return render_template("error.html", code=403, message="Not allowed."), 403
     offers_m = registry.get("offers")
     month = request.args.get("month") or date.today().strftime("%Y-%m")
@@ -65,23 +65,25 @@ def offers():
 
 @bp.route("/outstanding")
 def outstanding():
-    if not R.has_role(g.user, [R.ACCOUNTS, R.HEAD, *R.ENGINEERS]):
+    if not R.has_role(g.user, [R.ADMIN]):
         return render_template("error.html", code=403, message="Not allowed."), 403
-    by = request.args.get("by", "region")
+    by = request.args.get("by", "customer")
     future = request.args.get("future") == "1"
     inv = registry.get("invoices")
-    rows = inv.query(g.user, where="outstanding > 0.5")["rows"]
+    rows = inv.query(g.user, where="outstanding > 0.5")["rows"] if inv else []
     keyname = "customer_name" if by == "customer" else "region"
     table = OrderedDict()
-    for r in sorted(rows, key=lambda r: str(r[keyname] or "")):
-        k = r[keyname] or "(blank)"
+    due_invoices = []
+    for r in sorted(rows, key=lambda r: str(r.get(keyname) or "")):
+        k = r.get(keyname) or "(blank)"
         d = table.setdefault(k, dict(label=k, invoices=0, invoiced=0.0, receivable=0.0, future=0.0))
-        if r["payment_status"] == "Overdue / due now":       # TRUE receivable: only what is due on or before today
+        if r.get("payment_status") == "Overdue / due now":       # TRUE receivable: only what is due on or before today
             d["invoices"] += 1
-            d["invoiced"] += r["gross_value"] or r["net_value"] or 0
-            d["receivable"] += r["outstanding"]
+            d["invoiced"] += r.get("gross_value") or r.get("net_value") or 0
+            d["receivable"] += r.get("outstanding") or 0
+            due_invoices.append(r)
         else:
-            d["future"] += r["outstanding"]
+            d["future"] += r.get("outstanding") or 0
     table = [d for d in table.values() if d["receivable"] or (future and d["future"])]
     totals = dict(receivable=sum(d["receivable"] for d in table), future=sum(d["future"] for d in table),
                   invoices=sum(d["invoices"] for d in table))
@@ -91,12 +93,11 @@ def outstanding():
             head.append("Not yet due (information only)")
         data = [[d["label"], d["invoices"], d["receivable"]] + ([d["future"]] if future else []) for d in table]
         data.append(["TOTAL", totals["invoices"], totals["receivable"]] + ([totals["future"]] if future else []))
-        return xlsx_response("receivable-by-%s.xlsx" % by, head, data, sheet="Receivable", title="True receivable as of %s" % date.today().strftime("%d-%m-%Y"))
-    return render_template("reports/outstanding.html", by=by, future=future, table=table, totals=totals, fmt=fmt_money,
-                           today=date.today())
+        return xlsx_response("receivable-as-of-%s.xlsx" % date.today().strftime("%Y-%m-%d"), head, data, sheet="Receivable", title="True receivable as of %s" % date.today().strftime("%d-%m-%Y"))
+    return render_template("reports/outstanding.html", by=by, future=future, table=table, totals=totals,
+                           due_invoices=due_invoices, fmt=fmt_money, today=date.today())
 
 
 def register(app):
     app.register_blueprint(bp)
-    nav.add_item("Offer summary", "reports.offers", "Reports", 10, roles=[R.HEAD])
-    nav.add_item("Receivable as of today", "reports.outstanding", "Reports", 20, roles=[R.ACCOUNTS, R.HEAD, *R.ENGINEERS])
+    nav.add_item("Receivables as of Today", "reports.outstanding", "Accounts", 30, roles=[R.ADMIN])

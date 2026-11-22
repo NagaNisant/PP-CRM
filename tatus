@@ -1,0 +1,85 @@
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/__init__.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/choices.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/core/auth.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/core/crud.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/core/dashboard.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/core/db.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/core/digest.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/core/excel.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/core/fields.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/core/mailer.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/core/module.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/core/nav.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/core/registry.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/core/roles.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/core/scheduler.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/core/uploads.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/core/util.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/core/widgets.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/modules/__init__.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/modules/assignments/module.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/modules/customers/module.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/modules/followups/module.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/modules/invoices/module.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/modules/offers/module.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/modules/payments/module.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/modules/reports/module.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/modules/reports/templates/reports/offers.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/modules/reports/templates/reports/outstanding.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/modules/tour_expenses/module.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/modules/users/module.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/modules/visits/module.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/modules/work_orders/module.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/static/css/app.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/static/js/app.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/templates/_macros.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/templates/action.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/templates/base.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/templates/dashboard.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/templates/detail.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/templates/email/digest.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/templates/error.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/templates/form.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/templates/list.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/templates/login.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/templates/profile.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/tools/import_payments.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'config.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'manage.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'requirements.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'run.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/test_smoke.py', LF will be replaced by CRLF the next time Git touches it
+ app/__pycache__/__init__.cpython-311.pyc               | Bin [31m4834[m -> [32m0[m bytes
+ app/__pycache__/choices.cpython-311.pyc                | Bin [31m1715[m -> [32m0[m bytes
+ app/core/.gitignore                                    |   8 [31m--------[m
+ app/core/crud.py                                       |   7 [32m++++++[m[31m-[m
+ app/core/module.py                                     |   3 [32m++[m[31m-[m
+ app/modules/__pycache__/__init__.cpython-311.pyc       | Bin [31m2952[m -> [32m0[m bytes
+ .../assignments/__pycache__/__init__.cpython-311.pyc   | Bin [31m167[m -> [32m0[m bytes
+ .../assignments/__pycache__/module.cpython-311.pyc     | Bin [31m4567[m -> [32m0[m bytes
+ app/modules/assignments/module.py                      |   2 [32m+[m[31m-[m
+ .../customers/__pycache__/__init__.cpython-311.pyc     | Bin [31m165[m -> [32m0[m bytes
+ .../customers/__pycache__/module.cpython-311.pyc       | Bin [31m10386[m -> [32m0[m bytes
+ .../followups/__pycache__/__init__.cpython-311.pyc     | Bin [31m165[m -> [32m0[m bytes
+ .../followups/__pycache__/module.cpython-311.pyc       | Bin [31m4364[m -> [32m0[m bytes
+ .../invoices/__pycache__/__init__.cpython-311.pyc      | Bin [31m164[m -> [32m0[m bytes
+ .../invoices/__pycache__/module.cpython-311.pyc        | Bin [31m18618[m -> [32m0[m bytes
+ .../offers/__pycache__/__init__.cpython-311.pyc        | Bin [31m162[m -> [32m0[m bytes
+ app/modules/offers/__pycache__/module.cpython-311.pyc  | Bin [31m13923[m -> [32m0[m bytes
+ .../payments/__pycache__/__init__.cpython-311.pyc      | Bin [31m164[m -> [32m0[m bytes
+ .../payments/__pycache__/module.cpython-311.pyc        | Bin [31m4957[m -> [32m0[m bytes
+ .../reports/__pycache__/__init__.cpython-311.pyc       | Bin [31m163[m -> [32m0[m bytes
+ app/modules/reports/__pycache__/module.cpython-311.pyc | Bin [31m12386[m -> [32m0[m bytes
+ .../tour_expenses/__pycache__/__init__.cpython-311.pyc | Bin [31m169[m -> [32m0[m bytes
+ .../tour_expenses/__pycache__/module.cpython-311.pyc   | Bin [31m8990[m -> [32m0[m bytes
+ app/modules/users/__pycache__/__init__.cpython-311.pyc | Bin [31m161[m -> [32m0[m bytes
+ app/modules/users/__pycache__/module.cpython-311.pyc   | Bin [31m3161[m -> [32m0[m bytes
+ .../visits/__pycache__/__init__.cpython-311.pyc        | Bin [31m162[m -> [32m0[m bytes
+ app/modules/visits/__pycache__/module.cpython-311.pyc  | Bin [31m5496[m -> [32m0[m bytes
+ .../work_orders/__pycache__/__init__.cpython-311.pyc   | Bin [31m167[m -> [32m0[m bytes
+ .../work_orders/__pycache__/module.cpython-311.pyc     | Bin [31m14338[m -> [32m0[m bytes
+ app/templates/list.html                                |   7 [32m++++[m[31m---[m
+ instance/pumpcrm.db                                    | Bin [31m147456[m -> [32m0[m bytes
+ instance/uploads/offers/5719b0c3ea_Project_Plan_2.pdf  | Bin [31m599372[m -> [32m0[m bytes
+ 32 files changed, 13 insertions(+), 14 deletions(-)
