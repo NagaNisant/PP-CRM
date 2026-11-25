@@ -14,6 +14,14 @@ from app.modules.customers.module import customer_block, customer_values, resolv
 
 ENGINEER_SQL = "role IN ('application', 'marketing') AND active=1"
 
+
+class OfferStatusChoice(Choice):
+    def display(self, value):
+        if value in ("Open", "LIVE"):
+            return "LIVE"
+        return super().display(value)
+
+
 FIELDS = [
     *customer_block(),
     Ref("customer_id", "Customer", module="customers", form=False),
@@ -37,10 +45,10 @@ FIELDS = [
     File("offer_pdf", "Offer (PDF)", required=True),
 
     Ref("assigned_engineer_id", "Assigned engineer", module="users", where=ENGINEER_SQL,
-        roles=[R.APPLICATION], section="Follow-up status"),
-    Choice("rating", "Rating", choices=C.RATINGS, roles=[], badge=True, help="Engineers set this when adding a follow-up."),
-    Choice("status", "Status", choices=C.OFFER_STATUSES, default="Open", roles=[R.APPLICATION], badge=True),
-    Date("next_followup_date", "Next follow-up", roles=[]),
+        section="Offer status"),
+    Choice("rating", "Rating", choices=C.RATINGS, badge=True, help="Set when creating or adding a follow-up."),
+    OfferStatusChoice("status", "Status", choices=C.OFFER_STATUSES, default="LIVE", badge=True),
+    Date("next_followup_date", "Next follow-up"),
     Bool("is_latest", "Current version", form=False, default=1),
 
     Computed("month", "Month", sql="strftime('%Y-%m', t.offer_date)", list=False),
@@ -51,19 +59,20 @@ FIELDS = [
 
 # ---------------------------------------------------------------- scope & hooks
 def scope(user):
-    # Admin, Application, and Marketing can view EVERY offer created in the CRM
+    # Admin and Application users see ALL offers
+    # Marketing users see only offers assigned to them
+    if R.is_marketing(user):
+        return "q.assigned_engineer_id = ?", [user["id"]]
     return None, []
 
 
 def row_permission(action, user, row):
-    # Marketing cannot edit original offer creation details
-    if action == "edit" and R.is_marketing(user):
-        return False
+    # Admin, Application, and Marketing have identical functionality
     return True
 
 
 def prepare(data, old, user):
-    if not old and user.get("role") == R.APPLICATION and not data.get("assigned_engineer_id"):
+    if not old and not data.get("assigned_engineer_id"):
         data["assigned_engineer_id"] = user["id"]
 
 
@@ -87,6 +96,12 @@ def after_save(row, old, user):
     # When an offer is submitted/saved, clear any active draft for this user
     if not old:
         db.execute("DELETE FROM offer_drafts WHERE user_id=?", (user["id"],))
+    elif old and old.get("status") != row.get("status"):
+        body = f"Status updated from '{old.get('status')}' to '{row.get('status')}' by {user['full_name']}."
+        db.execute(
+            "INSERT INTO comments (entity, entity_id, user_id, body, created_at) VALUES ('offers', ?, ?, ?, datetime('now', 'localtime'))",
+            (row["id"], user["id"], body)
+        )
 
 
 def extra_values(row):
@@ -103,7 +118,7 @@ def panel(ctx, user):
 
 
 def row_class(row):
-    if row.get("status") == "Open" and row.get("is_latest") and row.get("next_followup_date") and row.get("next_followup_date") <= today_iso():
+    if row.get("status") in ("Open", "LIVE") and row.get("is_latest") and row.get("next_followup_date") and row.get("next_followup_date") <= today_iso():
         return "row-red" if row.get("next_followup_date") < today_iso() else "row-yellow"
 
 
@@ -132,9 +147,86 @@ def make_revision(row, user, data):
             url_for("offers.edit", id=new_id))
 
 
-# ---------------------------------------------------------------- custom routes (drafts)
+def _get_user_offers(user):
+    """List of (id, offer_no) tuples for the edit-offer dropdown, scoped to user."""
+    rows = module.fetch(user, where="q.is_latest = 1", order="q.offer_no")
+    return [(r["id"], r["offer_no"]) for r in rows]
+
+
+# ---------------------------------------------------------------- custom routes (drafts + edit offer)
 def routes(bp):
-    from flask import g
+    from flask import g, render_template
+
+    # ---- Edit Offer (selector page) ----
+    @bp.route("/edit-offer", methods=["GET", "POST"])
+    def edit_select():
+        if not module.can("edit", g.user):
+            from flask import abort
+            abort(403)
+        if request.method == "POST":
+            # POST = save the edited offer
+            offer_id = request.form.get("_offer_id")
+            if not offer_id:
+                flash("No offer selected.", "error")
+                return redirect(url_for("offers.edit_select"))
+            row = module.get(int(offer_id), g.user)
+            if not row:
+                flash("Offer not found or access denied.", "error")
+                return redirect(url_for("offers.edit_select"))
+            from app.core.crud import process_form, _save, _form_values
+            res = process_form(module, row, g.user)
+            if not res["errors"]:
+                rid = _save(module, row, res, g.user)
+                if rid:
+                    flash("Offer updated.", "ok")
+                    return redirect(url_for("offers.view", id=rid))
+            # re-render with errors
+            values = {f.name: (res["raw"].get(f.name) if f.kind != "file" else None) for f in module.form_fields}
+            values.update({k: v for k, v in res["raw"].items() if k not in values})
+            offers_list = _get_user_offers(g.user)
+            return render_template("offer_edit.html", module=module, row=row, values=values,
+                                   errors=res["errors"], offers=offers_list)
+        # GET - show the selector page
+        offer_id = request.args.get("id")
+        row = None
+        values = {}
+        errors = {}
+        if offer_id:
+            row = module.get(int(offer_id), g.user)
+            if row:
+                from app.core.crud import _form_values
+                values, _src = _form_values(module, row, g.user)
+        offers_list = _get_user_offers(g.user)
+        return render_template("offer_edit.html", module=module, row=row, values=values,
+                               errors=errors, offers=offers_list)
+
+    @bp.route("/get-offer-data")
+    def get_offer_data():
+        if not g.user:
+            return jsonify({"ok": False, "error": "Not logged in"}), 401
+        offer_id = request.args.get("id")
+        offer_no = request.args.get("offer_no", "").strip()
+        row = None
+        if offer_id:
+            row = module.get(int(offer_id), g.user)
+        elif offer_no:
+            rows = module.fetch(g.user, where="lower(q.offer_no) = lower(?)", params=[offer_no])
+            row = rows[0] if rows else None
+        if not row:
+            return jsonify({"ok": False, "error": "Offer not found"})
+        vals = {}
+        ev = customer_values(row)
+        combined = dict(row, **ev)
+        for f in module.form_fields:
+            v = combined.get(f.name)
+            if v is None:
+                vals[f.name] = ""
+            elif f.kind == "file":
+                vals[f.name] = ""  # files can't be pre-filled via JSON
+            else:
+                vals[f.name] = str(v) if not isinstance(v, str) else v
+        vals["id"] = row["id"]
+        return jsonify({"ok": True, "data": vals})
 
     @bp.route("/save-draft", methods=["POST"])
     def save_draft():
@@ -180,10 +272,8 @@ COLS = ["offer_no", "customer_id", "quoted_value", "rating", "next_followup_date
 
 
 def w_followups(user):
-    if R.is_admin(user):
-        return None  # Admin should not have follow-up assignments
-    where = "is_latest=1 AND status='Open' AND next_followup_date <= " + SQL_TODAY
-    if R.is_engineer(user):
+    where = "is_latest=1 AND status IN ('Open', 'LIVE') AND next_followup_date <= " + SQL_TODAY
+    if R.is_marketing(user):
         where += " AND (assigned_engineer_id = %d OR created_by = %d)" % (user["id"], user["id"])
     return rows_widget(module, user, order="next_followup_date", columns=COLS, where=where,
                        cls=lambda r: "row-red" if r["next_followup_date"] < today_iso() else "row-yellow")
@@ -191,7 +281,7 @@ def w_followups(user):
 
 module = Module(
     "offers", "Offer", FIELDS, plural="Offers", label_sql="{t}.offer_no || ' - ' || COALESCE((SELECT name FROM customers c WHERE c.id = {t}.customer_id), '')",
-    access={"view": R.ALL, "create": [R.APPLICATION], "edit": [R.APPLICATION], "delete": [],
+    access={"view": R.ALL, "create": [R.ADMIN, R.APPLICATION, R.MARKETING], "edit": [R.ADMIN, R.APPLICATION, R.MARKETING], "delete": [],
             "export": R.ALL},
     scope=scope, row_permission=row_permission,
     list_fields=["offer_no", "offer_date", "customer_id", "region", "item_type", "moc", "quantity", "quoted_value",
@@ -199,7 +289,7 @@ module = Module(
     default_filters={"is_latest": "1"}, default_order="offer_date DESC, id DESC",
     prefill=prefill, prepare=prepare, validate=validate, before_save=before_save, after_save=after_save,
     extra_values=extra_values, panel=panel, row_class=row_class, routes=routes, nav=("Sales", 10),
-    actions=[Action("revise", "Create revision", make_revision, roles=[R.APPLICATION], when=lambda r, u: bool(r["is_latest"]),
+    actions=[Action("revise", "Create revision", make_revision, roles=[R.ADMIN, R.APPLICATION, R.MARKETING], when=lambda r, u: bool(r["is_latest"]),
                     confirm="Create the next revision of this offer?")],
     related=[Related("followups", "offer_id", "Follow-up history", add_label="Add follow-up / rate this offer")],
     widgets=[],

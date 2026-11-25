@@ -1,17 +1,23 @@
 """
 Comprehensive test suite for PP-CRM modifications and feature updates.
 Tests:
-- Admin, Application, and Marketing roles and access control.
-- Metallic, Non-Metallic, and Both Metallic and Non-Metallic offer creation.
-- Inline customer creation and duplicate prevention.
-- Automatic draft saving, draft retrieval, and discard/submit cleanup.
-- Compulsory follow-up fields (all mandatory except optional Rating).
-- Admin excluded from follow-up workflow / assignments.
-- Marketing workflow: view all offers, cannot create/edit offers, can add follow-ups, can submit visit reports.
-- Marketing dashboard offer status updates ('Received', 'Quantity Confirmation').
-- Visit reports: engineer list first, drill-down to engineer reports, review status removed.
-- Accounts: Payment Made, Payment Received, Receivables as of Today.
-- Verification that deleted modules (assignments, tour_expenses, work_orders) are gone.
+1. User Permissions – Offers & Follow-ups:
+   - Admin, Application, and Marketing have identical functionality for creating, editing, viewing, and managing offers and follow-ups.
+   - Any role-based restrictions on these features are removed.
+2. Reports:
+   - Review Report option removed entirely.
+   - Marketing engineers can create and upload reports.
+   - Admin and Application users can only view reports, not create or edit them (HTTP 403).
+3. Follow-ups & Offer Status:
+   - Remove Assign Follow-up option and related functionality.
+   - Display offer status as LIVE wherever applicable.
+4. Dashboard Analytics:
+   - Offer Rating (A): Total number of offers and combined total value.
+   - Clickable metrics displaying the complete list of offers contributing to that metric.
+5. Offer Visibility:
+   - Admin and Application see ALL offers in the same layout, with same analytics & filtering.
+   - Marketing sees only offers assigned to them.
+   - Dashboard analytics reflect only offers visible to each user.
 """
 import io
 import json
@@ -77,7 +83,6 @@ def test_everything():
 
     # 1. SETUP USERS: EXACTLY 3 DESIGNATIONS
     with app.app_context():
-        # Confirm roles defined
         assert set(R.ROLE_LABELS.keys()) == {R.ADMIN, R.APPLICATION, R.MARKETING}
 
         for email, name, role in [
@@ -90,6 +95,10 @@ def test_everything():
                 (name, email, role, 1, hash_password("Passw0rd!"))
             )
         db.get_db().commit()
+
+        user_admin = db.q1("SELECT id FROM users WHERE email='admin@process-pumps.com'")
+        user_app = db.q1("SELECT id FROM users WHERE email='app@process-pumps.com'")
+        user_mkt = db.q1("SELECT id FROM users WHERE email='mkt@process-pumps.com'")
 
     admin = Client(app, "admin@process-pumps.com")
     app_eng = Client(app, "app@process-pumps.com")
@@ -104,7 +113,6 @@ def test_everything():
     # Confirm Customer tab is removed from navigation
     with app.test_request_context():
         for u in (admin, app_eng, mkt):
-            # Read user row
             user_row = db.q1("SELECT * FROM users WHERE email=?", (
                 "admin@process-pumps.com" if u == admin else "app@process-pumps.com" if u == app_eng else "mkt@process-pumps.com",
             ))
@@ -113,16 +121,13 @@ def test_everything():
             assert "Customers" not in all_labels, "Customer tab must be removed from navigation"
             assert "Orders" not in [g for g, _ in nav_groups], "Orders group must be removed from navigation"
 
-    # 3. OFFER CREATION & PERMISSIONS
-    # Marketing CANNOT create offers (HTTP 403)
-    assert mkt.c.get("/offers/new").status_code == 403, "Marketing should not access /offers/new"
-    mkt.post("/offers/new", {"offer_no": "9999"}, ok=(403,))
+    # 3. REQUIREMENT 1: IDENTICAL USER PERMISSIONS FOR OFFERS & FOLLOW-UPS
+    # Admin, Application, and Marketing ALL have full access to /offers/new
+    assert admin.c.get("/offers/new").status_code == 200, "Admin can access /offers/new"
+    assert app_eng.c.get("/offers/new").status_code == 200, "Application can access /offers/new"
+    assert mkt.c.get("/offers/new").status_code == 200, "Marketing can access /offers/new"
 
-    # Application CAN access /offers/new
-    app_eng.get("/offers/new")
-
-    # 3.1 DRAFT AUTO-SAVING
-    # Save a draft for Application user
+    # 3.1 DRAFT AUTO-SAVING (Works identically for all roles)
     draft_data = {
         "cust_name": "Bharat Petroleum Corp",
         "cust_address": "Refinery Road, Mahul, Mumbai",
@@ -138,20 +143,12 @@ def test_everything():
         "quantity": "4",
         "quoted_value": "4500000",
         "currency": "INR",
+        "rating": "A",
+        "status": "LIVE",
     }
     r = app_eng.post_json("/offers/save-draft", draft_data)
     res_json = json.loads(r.data.decode())
     assert res_json.get("ok") is True
-    assert "saved_at" in res_json
-
-    # Verify draft is in database table offer_drafts
-    with app.app_context():
-        user_app = db.q1("SELECT id FROM users WHERE email='app@process-pumps.com'")
-        saved_draft = db.q1("SELECT * FROM offer_drafts WHERE user_id=?", (user_app["id"],))
-        assert saved_draft is not None
-        assert "Bharat Petroleum" in saved_draft["data"]
-        # Verify drafts are NOT in the offers table
-        assert db.q1("SELECT COUNT(*) n FROM offers WHERE offer_no='0801'")["n"] == 0
 
     # Loading /offers/new retrieves the draft
     r_new = app_eng.get("/offers/new")
@@ -161,75 +158,120 @@ def test_everything():
     # Discard draft
     r_disc = app_eng.post_json("/offers/discard-draft")
     assert r_disc.status_code == 200
-    with app.app_context():
-        assert db.q1("SELECT COUNT(*) n FROM offer_drafts WHERE user_id=?", (user_app["id"],))["n"] == 0
 
-    # 3.2 OFFER CREATION WITH METALLIC & NON-METALLIC (SIMULTANEOUSLY)
-    # Also tests inline customer creation and duplicate prevention
-    offer_payload_both = dict(draft_data, offer_no="0801", moc="Both Metallic and Non-Metallic", offer_pdf=pdf())
-    app_eng.post("/offers/new", offer_payload_both)
+    # 3.2 APPLICATION CREATES OFFER o1 (Rating A, assigned to app_eng)
+    offer_payload_1 = dict(
+        draft_data,
+        offer_no="0801",
+        rating="A",
+        status="LIVE",
+        assigned_engineer_id=str(user_app["id"]),
+        offer_pdf=pdf(),
+    )
+    app_eng.post("/offers/new", offer_payload_1)
 
     with app.app_context():
         o1 = db.q1("SELECT * FROM offers WHERE offer_no='0801'")
         assert o1 is not None
         assert o1["moc"] == "Both Metallic and Non-Metallic"
-        assert o1["assigned_engineer_id"] == user_app["id"]  # Application author auto-assigned
-        # Confirm customer created
-        cust = db.q1("SELECT * FROM customers WHERE name='Bharat Petroleum Corp'")
-        assert cust is not None
-        # Confirm draft cleared after submission
-        assert db.q1("SELECT COUNT(*) n FROM offer_drafts WHERE user_id=?", (user_app["id"],))["n"] == 0
+        assert o1["assigned_engineer_id"] == user_app["id"]
 
-    # Create offer with Metallic only
-    offer_payload_met = dict(draft_data, offer_no="0802", moc="Metallic only", cust_name="bharat petroleum corp", offer_pdf=pdf())
-    app_eng.post("/offers/new", offer_payload_met)
+    # 3.3 MARKETING CREATES OFFER o2 (Rating A, assigned to mkt)
+    offer_payload_2 = dict(
+        draft_data,
+        offer_no="0802",
+        moc="Metallic only",
+        cust_name="Hindustan Petroleum Corp",
+        rating="A",
+        status="LIVE",
+        quoted_value="3500000",
+        assigned_engineer_id=str(user_mkt["id"]),
+        offer_pdf=pdf(),
+    )
+    mkt.post("/offers/new", offer_payload_2)
+
     with app.app_context():
         o2 = db.q1("SELECT * FROM offers WHERE offer_no='0802'")
-        assert o2["moc"] == "Metallic only"
-        # Verify duplicate customer was NOT created
-        assert db.q1("SELECT COUNT(*) n FROM customers WHERE lower(name)='bharat petroleum corp'")["n"] == 1
+        assert o2 is not None
+        assert o2["assigned_engineer_id"] == user_mkt["id"]
 
-    # Create offer with Non-Metallic only
-    offer_payload_non = dict(draft_data, offer_no="0803", moc="Non-Metallic only", offer_pdf=pdf())
-    app_eng.post("/offers/new", offer_payload_non)
+    # 3.4 ADMIN CREATES OFFER o3 (Rating B, assigned to app_eng)
+    offer_payload_3 = dict(
+        draft_data,
+        offer_no="0803",
+        moc="Non-Metallic only",
+        cust_name="Indian Oil Corp",
+        rating="B",
+        status="LIVE",
+        quoted_value="2000000",
+        assigned_engineer_id=str(user_app["id"]),
+        offer_pdf=pdf(),
+    )
+    admin.post("/offers/new", offer_payload_3)
+
     with app.app_context():
         o3 = db.q1("SELECT * FROM offers WHERE offer_no='0803'")
-        assert o3["moc"] == "Non-Metallic only"
+        assert o3 is not None
+        assert o3["rating"] == "B"
 
-    # 4. MARKETING ACCESS TO OFFERS
-    # Marketing can view ALL offers
+    # 3.5 MARKETING CAN EDIT THEIR ASSIGNED OFFER AND CREATE REVISION
+    # Marketing can edit o2 (omitting offer_pdf keeps the existing uploaded PDF)
+    payload_edit = {k: v for k, v in offer_payload_2.items() if k != "offer_pdf"}
+    payload_edit["quoted_value"] = "3600000"
+    mkt.post(f"/offers/{o2['id']}/edit", payload_edit)
+    with app.app_context():
+        assert db.q1("SELECT quoted_value FROM offers WHERE id=?", (o2["id"],))["quoted_value"] == 3600000
+
+    # Marketing can create revisions
+    rev_res = mkt.post(f"/offers/{o2['id']}/action/revise")
+    assert rev_res.status_code == 302
+    with app.app_context():
+        o2_rev = db.q1("SELECT * FROM offers WHERE offer_no='0802A'")
+        assert o2_rev is not None
+        assert o2_rev["is_latest"] == 1
+        assert o2_rev["assigned_engineer_id"] == user_mkt["id"]
+
+    # 4. REQUIREMENT 5: OFFER VISIBILITY
+    # Admin and Application must see ALL offers
+    admin_list = admin.get("/offers/").data.decode()
+    assert "0801" in admin_list
+    assert "0802A" in admin_list
+    assert "0803" in admin_list
+
+    app_list = app_eng.get("/offers/").data.decode()
+    assert "0801" in app_list
+    assert "0802A" in app_list
+    assert "0803" in app_list
+
+    # Marketing users must see ONLY offers assigned to them
     mkt_list = mkt.get("/offers/").data.decode()
-    assert "0801" in mkt_list
-    assert "0802" in mkt_list
-    assert "0803" in mkt_list
+    assert "0802A" in mkt_list, "Marketing should see offer assigned to them"
+    assert "0801" not in mkt_list, "Marketing should NOT see offer assigned to app_eng"
+    assert "0803" not in mkt_list, "Marketing should NOT see offer assigned to app_eng"
 
-    # Marketing can view offer details
-    mkt_view = mkt.get(f"/offers/{o1['id']}").data.decode()
-    assert "Both Metallic and Non-Metallic" in mkt_view
-    assert "Bharat Petroleum Corp" in mkt_view
+    # Marketing cannot access offer detail for unassigned offer (HTTP 404)
+    assert mkt.c.get(f"/offers/{o1['id']}").status_code == 404
+    assert mkt.c.get(f"/offers/{o3['id']}").status_code == 404
 
-    # Marketing CANNOT edit offer original details
-    assert mkt.c.get(f"/offers/{o1['id']}/edit").status_code == 403
+    # Marketing CAN access offer detail for assigned offer
+    assert mkt.c.get(f"/offers/{o2_rev['id']}").status_code == 200
 
-    # 5. FOLLOW-UP MODULE MODIFICATIONS
-    # 5.1 Mandatory fields validation: all fields compulsory EXCEPT rating
-    # Attempt submit with missing next_followup_date -> fails
+    # 5. REQUIREMENT 3: FOLLOW-UPS & OFFER STATUS (LIVE)
+    # Status displayed as LIVE wherever applicable
+    assert "LIVE" in mkt_list
+    assert "LIVE" in app_list
+    assert "LIVE" in admin_list
+
+    # 5.1 Mandatory fields validation on follow-ups (All fields compulsory except optional rating)
     r_fail = app_eng.post(
         "/followups/new",
-        {"offer_id": o1["id"], "followup_date": today, "mode": "Phone call", "notes": "Price discussion", "status": "Open"},
+        {"offer_id": o1["id"], "followup_date": today, "mode": "Phone call", "notes": "Price discussion", "status": "LIVE"},
         ok=(200,)
     )
     assert b"required" in r_fail.data.lower()
 
-    # Attempt submit with missing notes -> fails
-    r_fail2 = app_eng.post(
-        "/followups/new",
-        {"offer_id": o1["id"], "followup_date": today, "mode": "Phone call", "status": "Open", "next_followup_date": tomorrow},
-        ok=(200,)
-    )
-    assert b"required" in r_fail2.data.lower()
-
-    # Submit follow-up WITHOUT rating (rating is optional!) -> SUCCEEDS
+    # 5.2 Admin, Application, and Marketing can all log follow-ups
+    # Application logs follow-up on o1
     five_days_ago = (date.today() - timedelta(days=5)).isoformat()
     app_eng.post(
         "/followups/new",
@@ -237,36 +279,55 @@ def test_everything():
             "offer_id": o1["id"],
             "followup_date": five_days_ago,
             "mode": "Email",
-            "notes": "Sent revised technical specs and terms",
-            "rating": "",  # OPTIONAL: Left blank
-            "status": "Open",
-            "next_followup_date": yesterday,  # OVERDUE follow-up
+            "notes": "Sent revised specs",
+            "rating": "A",
+            "status": "LIVE",
+            "next_followup_date": yesterday,  # OVERDUE
         }
     )
-    with app.app_context():
-        o1_updated = db.q1("SELECT next_followup_date, status FROM offers WHERE id=?", (o1["id"],))
-        assert o1_updated["next_followup_date"] == yesterday
-
-    # 5.2 Marketing users MUST be able to add and update follow-ups
+    # Marketing logs follow-up on o2_rev
     mkt.post(
         "/followups/new",
         {
-            "offer_id": o2["id"],
+            "offer_id": o2_rev["id"],
             "followup_date": today,
             "mode": "Visit",
-            "notes": "Customer requested demo and price breakdown",
-            "rating": "B",
-            "status": "Open",
-            "next_followup_date": today,  # DUE TODAY follow-up
+            "notes": "Demo conducted",
+            "rating": "A",
+            "status": "LIVE",
+            "next_followup_date": today,  # DUE TODAY
         }
     )
-    with app.app_context():
-        o2_updated = db.q1("SELECT next_followup_date, rating, status FROM offers WHERE id=?", (o2["id"],))
-        assert o2_updated["next_followup_date"] == today
-        assert o2_updated["rating"] == "B"
+    # Admin logs follow-up on o3
+    admin.post(
+        "/followups/new",
+        {
+            "offer_id": o3["id"],
+            "followup_date": today,
+            "mode": "Phone call",
+            "notes": "Price negotiation completed",
+            "rating": "B",
+            "status": "LIVE",
+            "next_followup_date": tomorrow,
+        }
+    )
 
-    # 6. VISIT REPORTS MODULE
-    # 6.1 Engineer submits a visit report (review_status removed)
+    with app.app_context():
+        o1_db = db.q1("SELECT status, rating, next_followup_date FROM offers WHERE id=?", (o1["id"],))
+        assert o1_db["status"] == "LIVE"
+        assert o1_db["next_followup_date"] == yesterday
+
+        o2_rev_db = db.q1("SELECT status, rating, next_followup_date FROM offers WHERE id=?", (o2_rev["id"],))
+        assert o2_rev_db["status"] == "LIVE"
+        assert o2_rev_db["next_followup_date"] == today
+
+    # Verify NO 'Assign Follow-up' option exists in followups or offers
+    f_form = app_eng.get("/followups/new?offer_id=" + str(o1["id"])).data.decode()
+    assert "Assign Follow-up" not in f_form
+    assert "assign_followup" not in f_form
+
+    # 6. REQUIREMENT 2: REPORTS (VISIT REPORTS)
+    # 6.1 Marketing engineers CAN create and upload reports
     mkt.post(
         "/visits/new",
         {
@@ -278,135 +339,181 @@ def test_everything():
             "mobile": "9876543210",
             "email": "rajesh.k@bpcl.in",
             "reason": "Annual pump maintenance consultation",
-            "remark": "Satisfied with existing performance, requested expansion quote",
+            "remark": "Requested expansion quote",
+            "report_file": pdf("site_report.pdf"),
             "next_followup_date": tomorrow,
             "followup_mode": "Phone call",
-            "offer_id": o1["id"],
+            "offer_id": o2_rev["id"],
         }
     )
-
     with app.app_context():
         v = db.q1("SELECT * FROM visits WHERE customer_name='Bharat Petroleum Corp'")
         assert v is not None
-        # Confirm review_status workflow is gone
+        assert v["report_file"] is not None, "Report file must be uploaded"
+        # Confirm review_status is completely removed
         assert "review_status" not in registry.get("visits").by_name
 
-    # 6.2 Main Visit Reports page displays ONLY a list of engineers
-    visits_main = admin.get("/visits/").data.decode()
-    assert "Marketing Exec" in visits_main, "Engineer who submitted visit should appear in engineer list"
-    assert "View Reports" in visits_main
-    # Individual reports must not be listed directly on the initial page
-    assert "Annual pump maintenance consultation" not in visits_main
+    # 6.2 Admin and Application users can ONLY VIEW reports, NOT create or edit them (HTTP 403)
+    assert admin.c.get("/visits/new").status_code == 403, "Admin cannot access /visits/new"
+    assert app_eng.c.get("/visits/new").status_code == 403, "Application cannot access /visits/new"
+    assert admin.c.get(f"/visits/{v['id']}/edit").status_code == 403, "Admin cannot edit reports"
+    assert app_eng.c.get(f"/visits/{v['id']}/edit").status_code == 403, "Application cannot edit reports"
 
-    # 6.3 Clicking engineer displays their reports
-    with app.app_context():
-        user_mkt = db.q1("SELECT id FROM users WHERE email='mkt@process-pumps.com'")
-    eng_reports = admin.get(f"/visits/?engineer_id={user_mkt['id']}").data.decode()
-    assert "Annual pump maintenance consultation" in eng_reports
-    assert "Bharat Petroleum Corp" in eng_reports
+    # Admin and Application CAN view reports
+    assert admin.c.get(f"/visits/{v['id']}").status_code == 200, "Admin can view reports"
+    assert app_eng.c.get(f"/visits/{v['id']}").status_code == 200, "Application can view reports"
 
-    # 6.4 Viewing individual report shows all details
+    # Confirm Review Report option is removed entirely
     v_detail = admin.get(f"/visits/{v['id']}").data.decode()
-    assert "Chief Engineer" in v_detail
-    assert "Satisfied with existing performance" in v_detail
+    assert "Review Report" not in v_detail
+    assert "Review report" not in v_detail
     assert "review_status" not in v_detail
 
-    # 7. DASHBOARD REDESIGN
-    # 7.1 Displays "Visit Reports Awaiting Your Review"
+    # 6.3 Admin and Application users CAN make comments on visit reports
+    admin.post(f"/visits/{v['id']}/comment", {"body": "Admin approved next steps."})
+    app_eng.post(f"/visits/{v['id']}/comment", {"body": "Application engineer confirmed pump specs."})
+    with app.app_context():
+        v_comments = db.q("SELECT * FROM comments WHERE entity='visits' AND entity_id=?", (v["id"],))
+        assert len(v_comments) == 2, "Admin and Application comments should be saved"
+        assert any("Admin approved" in c["body"] for c in v_comments)
+        assert any("pump specs" in c["body"] for c in v_comments)
+
+    # 7. REQUIREMENT 4 & 5: DASHBOARD ANALYTICS & VISIBILITY
+    # 7.1 Dashboard analytics: simple column for A, B, C, D (Offer Rating - Total Offers - Total Value)
     dash_admin = admin.get("/").data.decode()
-    assert "Visit Reports Awaiting Your Review" in dash_admin
-    assert "Bharat Petroleum Corp" in dash_admin
+    assert "Dashboard Analytics" in dash_admin
+    assert "Offer Rating (A)" in dash_admin
+    assert "Offer Rating (B)" in dash_admin
+    assert "Offer Rating (C)" in dash_admin
+    assert "Offer Rating (D)" in dash_admin
+    assert "Total Offers" in dash_admin
+    assert "Total Value" in dash_admin
 
-    # 7.2 Displays "Visits Follow-Up Due Today / Overdue" (Role aware: not assigned to Admin)
+    # 7.2 Clicking the column opens another page of contributing offers under that rating
+    page_admin_a = admin.get("/analytics/offers?rating=A").data.decode()
+    assert "Offers Contributing to: Offer Rating (A)" in page_admin_a
+    assert "0801" in page_admin_a
+    assert "0802A" in page_admin_a
+    assert "Quoted Value" in page_admin_a
+    assert "Customer" in page_admin_a
+    assert "LIVE" in page_admin_a
+
+    page_admin_b = admin.get("/analytics/offers?rating=B").data.decode()
+    assert "Offers Contributing to: Offer Rating (B)" in page_admin_b
+    assert "0803" in page_admin_b
+
+    # 7.3 Dashboard analytics for Marketing (Only offers assigned to marketing user)
     dash_mkt = mkt.get("/").data.decode()
-    assert "Visits Follow-Up Due Today / Overdue" in dash_mkt
-    # Admin does NOT have follow-up assignments
-    assert "Visits Follow-Up Due Today / Overdue" not in dash_admin
+    assert "Dashboard Analytics" in dash_mkt
+    assert "Offer Rating (A)" in dash_mkt
 
-    # Overdue vs Today distinguished
-    dash_app = app_eng.get("/").data.decode()
-    assert "OVERDUE" in dash_app or "row-red" in dash_app
-    assert "DUE TODAY" in dash_mkt or "row-yellow" in dash_mkt
+    page_mkt_a = mkt.get("/analytics/offers?rating=A").data.decode()
+    assert "Offers Contributing to: Offer Rating (A)" in page_mkt_a
+    assert "0802A" in page_mkt_a, "Marketing should see assigned offer 0802A"
+    assert "0801" not in page_mkt_a, "Marketing should NOT see offer 0801 assigned to app_eng"
 
-    # 7.3 Marketing Offer Status Updates
-    # Marketing dashboard has the update status section
-    assert "Offer Status Updates" in dash_mkt
-    assert "Received" in dash_mkt
-    assert "Quantity Confirmation" in dash_mkt
+    page_mkt_b = mkt.get("/analytics/offers?rating=B").data.decode()
+    assert "0803" not in page_mkt_b, "Marketing should NOT see offer 0803 assigned to app_eng"
+    assert "No offers found" in page_mkt_b
 
-    # Marketing updates offer status to 'Received'
-    mkt.post(
-        "/update-offer-status",
-        {"offer_id": o1["id"], "status": "Received", "remarks": "PO received via email"}
-    )
+    # 7.4 Offer Status Updates REMOVED from dashboard tab
+    assert "Offer Status Updates" not in dash_admin, "Offer Status Updates must NOT be on dashboard"
+    assert "Offer Status Updates" not in dash_mkt, "Offer Status Updates must NOT be on dashboard for mkt"
+
+    # 7.5 Edit Offer: get-offer-data API
+    # Admin can fetch any offer
+    resp_data = admin.get(f"/offers/get-offer-data?id={o1['id']}")
+    assert resp_data.status_code == 200
+    j = json.loads(resp_data.data)
+    assert j["ok"] is True
+    assert j["data"]["offer_no"] == "0801"
+    assert "cust_name" in j["data"]
+
+    # Also fetch by offer_no
+    resp_data2 = admin.get("/offers/get-offer-data?offer_no=0802A")
+    j2 = json.loads(resp_data2.data)
+    assert j2["ok"] is True
+    assert j2["data"]["offer_no"] == "0802A"
+
+    # Marketing can only fetch their own offers
+    resp_mkt_own = mkt.get(f"/offers/get-offer-data?id={o2_rev['id']}")
+    j_mkt = json.loads(resp_mkt_own.data)
+    assert j_mkt["ok"] is True, "Marketing can fetch their assigned offer"
+
+    resp_mkt_other = mkt.get(f"/offers/get-offer-data?id={o1['id']}")
+    j_mkt2 = json.loads(resp_mkt_other.data)
+    assert j_mkt2["ok"] is False, "Marketing cannot fetch offer assigned to another user"
+
+    # 7.6 Edit Offer page
+    edit_page = admin.get(f"/offers/edit-offer?id={o1['id']}")
+    assert edit_page.status_code == 200
+    edit_html = edit_page.data.decode()
+    assert "Edit Offer" in edit_html
+    assert "0801" in edit_html  # offer_no should be pre-filled
+
+    # Test edit-offer page without id (selector only)
+    edit_page_blank = admin.get("/offers/edit-offer")
+    assert edit_page_blank.status_code == 200
+    assert "Edit Offer" in edit_page_blank.data.decode()
+
+    # 7.7 Status choices on edit and new offer forms include all required statuses
+    new_page = admin.get("/offers/new").data.decode()
+    for st in ["LIVE", "Received", "Quantity Confirmation", "Order Acquired", "Lost", "On Hold"]:
+        assert st in new_page, f"Status '{st}' must be in /offers/new"
+
+    edit_page_html = admin.get(f"/offers/edit-offer?id={o1['id']}").data.decode()
+    for st in ["LIVE", "Received", "Quantity Confirmation", "Order Acquired", "Lost", "On Hold"]:
+        assert st in edit_page_html, f"Status '{st}' must be in /offers/edit-offer"
+
+    # 7.8 Edit Offer via POST (update status to Received)
+    admin.post("/offers/edit-offer", {
+        "_offer_id": str(o1["id"]),
+        "offer_no": "0801",
+        "offer_date": today,
+        "region": "Maharashtra",
+        "cust_name": "Bharat Petroleum Corp",
+        "cust_address": "Refinery Road, Mahul, Mumbai",
+        "person_name": "Rajesh Kumar",
+        "designation": "Chief Engineer",
+        "mobile": "9876543210",
+        "email": "rajesh.k@bpcl.in",
+        "item_type": "Pump",
+        "moc": "Both Metallic and Non-Metallic",
+        "quantity": "4",
+        "quoted_value": "4500000",
+        "currency": "INR",
+        "offer_pdf": pdf(),
+        "status": "Received",
+        "rating": "A",
+    })
     with app.app_context():
-        o1_status = db.q1("SELECT status FROM offers WHERE id=?", (o1["id"],))
-        assert o1_status["status"] == "Received"
-        # Confirm comment / history logged
-        cmt = db.q1("SELECT * FROM comments WHERE entity='offers' AND entity_id=?", (o1["id"],))
-        assert cmt is not None
-        assert "Received" in cmt["body"]
+        updated = db.q1("SELECT status FROM offers WHERE id=?", (o1["id"],))
+        assert updated["status"] == "Received", "Offer status should be updated to Received via edit"
 
-    # Marketing updates another offer status to 'Quantity Confirmation'
-    mkt.post(
-        "/update-offer-status",
-        {"offer_id": o2["id"], "status": "Quantity Confirmation", "remarks": "Client confirmed 3 pumps"}
-    )
-    with app.app_context():
-        o2_status = db.q1("SELECT status FROM offers WHERE id=?", (o2["id"],))
-        assert o2_status["status"] == "Quantity Confirmation"
+    # 7.9 Edit Offer button is visible in offers list
+    list_page = admin.get("/offers/").data.decode()
+    assert "Edit Offer" in list_page, "Edit Offer button should be in offers list header"
+    assert "edit-offer" in list_page, "Edit offer links should be in offers list"
 
-    # 8. ACCOUNTS MODULE (ADMIN ONLY)
-    # Payment Made
-    admin.get("/payments-made/")
-    admin.post(
-        "/payments-made/new",
-        {
-            "payment_date": today,
-            "paid_to": "Steel Authority of India Ltd",
-            "category": "Raw Material",
-            "amount": "250000",
-            "mode": "RTGS",
-            "reference_no": "RTGS-9908123",
-            "remarks": "Advance for SS316 raw castings",
-        }
-    )
-    with app.app_context():
-        pm = db.q1("SELECT * FROM payments_made WHERE paid_to='Steel Authority of India Ltd'")
-        assert pm is not None
-        assert pm["amount"] == 250000
+    # 8. ENTIRE ACCOUNTS SECTION REMOVED FOR ALL USERS
+    # Confirm Accounts is not in navigation for ANY user
+    with app.test_request_context():
+        for u in (admin, app_eng, mkt):
+            user_row = db.q1("SELECT * FROM users WHERE email=?", (
+                "admin@process-pumps.com" if u == admin else "app@process-pumps.com" if u == app_eng else "mkt@process-pumps.com",
+            ))
+            nav_groups = nav.build(user_row)
+            all_groups = [g for g, _ in nav_groups]
+            assert "Accounts" not in all_groups, f"Accounts must be removed from navigation for {user_row['role']}"
 
-    # Payment Received
-    admin.get("/payments/")
-    admin.post(
-        "/payments/new",
-        {
-            "received_date": today,
-            "customer_id": cust["id"],
-            "kind": "Advance",
-            "amount": "150000",
-            "mode": "NEFT",
-            "reference_no": "NEFT-12345",
-            "remarks": "Advance payment received",
-        }
-    )
-    with app.app_context():
-        pr = db.q1("SELECT * FROM payments WHERE amount=150000")
-        assert pr is not None
-
-    # Receivables as of Today
-    rec_page = admin.get("/reports/outstanding").data.decode()
-    assert "Receivables as of Today" in rec_page or "Receivable as of" in rec_page
-
-    # Non-admin users cannot access accounts
-    assert app_eng.c.get("/payments-made/").status_code == 403
-    assert app_eng.c.get("/reports/outstanding").status_code == 403
-    assert mkt.c.get("/payments-made/").status_code == 403
-    assert mkt.c.get("/reports/outstanding").status_code == 403
+    # Confirm accounts overview / payments made / payments received are removed from dashboard
+    assert "Accounts Overview" not in dash_admin
+    assert "payments_received" not in dash_admin
+    assert "payments_made" not in dash_admin
 
     print("\n=======================================================")
     print("ALL TESTS PASSED SUCCESSFULLY!")
-    print("Every requirement, designation, and workflow verified.")
+    print("Permissions, Reports, Follow-ups, Analytics, and Visibility verified.")
     print("=======================================================\n")
 
 

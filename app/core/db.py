@@ -95,4 +95,7 @@ def sync_schema(modules):
     for m in modules:
         for table, columns, indexes in m.ddl():
             ensure_table(table, columns, indexes)
+    has_offers = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='offers'").fetchone()
+    if has_offers:
+        db.execute("UPDATE offers SET status='LIVE' WHERE status='Open'")
     db.commit()

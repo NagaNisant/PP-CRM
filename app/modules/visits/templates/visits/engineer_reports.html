@@ -54,6 +54,9 @@
           <a class="btn small" href="{{ url_for('visits.view', id=r.id) }}">
             View Details &rarr;
           </a>
+          {% if r.report_file %}
+            <a class="btn small" href="{{ url_for('visits.file', id=r.id, fname='report_file') }}" target="_blank">&#128206; File</a>
+          {% endif %}
         </td>
       </tr>
       {% else %}

@@ -8,36 +8,122 @@
       Today: <strong>{{ today|date }}</strong>
     </p>
   </div>
-  {% if has_role(g.user, ['application']) %}
-    <a class="btn primary" href="{{ url_for('offers.new') }}">+ New Offer</a>
-  {% endif %}
+  <a class="btn primary" href="{{ url_for('offers.new') }}">+ New Offer</a>
 </div>
 
-{% if admin_stats %}
-<!-- Admin CRM Overview -->
-<div class="cards" style="margin-bottom: 2rem;">
-  <div class="card stat-card" style="padding: 1rem 1.25rem; background: #fff; border-radius: 8px; border: 1px solid var(--line);">
-    <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; font-weight: 600;">Total Offers / Value</div>
-    <div style="font-size: 1.5rem; font-weight: 700; color: var(--navy); margin-top: 4px;">{{ admin_stats.total_offers }} <small style="font-size: 13px; font-weight: normal; color: #555;">({{ admin_stats.total_quoted }})</small></div>
-    <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">{{ admin_stats.open_offers }} open offers</div>
-  </div>
-  <div class="card stat-card" style="padding: 1rem 1.25rem; background: #fff; border-radius: 8px; border: 1px solid var(--line);">
-    <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; font-weight: 600;">Customer Visits</div>
-    <div style="font-size: 1.5rem; font-weight: 700; color: var(--navy); margin-top: 4px;">{{ admin_stats.total_visits }}</div>
-    <div style="font-size: 12px; color: var(--muted); margin-top: 4px;"><a href="{{ url_for('visits.index') }}">View engineer reports &rarr;</a></div>
-  </div>
-  <div class="card stat-card" style="padding: 1rem 1.25rem; background: #fff; border-radius: 8px; border: 1px solid var(--line);">
-    <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; font-weight: 600;">Accounts Overview</div>
-    <div style="font-size: 1.2rem; font-weight: 700; color: #2e7d32; margin-top: 4px;">Received: {{ admin_stats.payments_received }}</div>
-    <div style="font-size: 12px; color: #c62828; margin-top: 4px;">Made: {{ admin_stats.payments_made }}</div>
-  </div>
-</div>
-{% endif %}
-
-<!-- SECTION 6.1: Visit Reports Awaiting Your Review -->
+<!-- SECTION 1: Dashboard Analytics (Offer Ratings A, B, C, D) -->
 <section class="card" style="margin-bottom: 2rem;">
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-    <h2 style="margin: 0; font-size: 1.25rem;">Visit Reports Awaiting Your Review</h2>
+    <div>
+      <h2 style="margin: 0; font-size: 1.25rem;">Dashboard Analytics</h2>
+      <p class="muted" style="margin: 0.25rem 0 0; font-size: 13px;">
+        Overview of offer ratings. Click any rating column below to open a full page of contributing offers.
+      </p>
+    </div>
+    <a class="btn small" href="{{ url_for('offers.index') }}">All Offers List &rarr;</a>
+  </div>
+
+  <div class="table-wrap">
+    <table class="grid">
+      <thead>
+        <tr>
+          <th>Offer Rating</th>
+          <th class="num">Total Offers</th>
+          <th class="num">Total Value</th>
+          <th style="text-align: right;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in ratings_list %}
+        <tr style="cursor: pointer;" onclick="window.location.href='{{ r.url }}';">
+          <td>
+            <a href="{{ r.url }}" style="font-weight: 700; font-size: 14px; text-decoration: none; color: #0284c7;">
+              <span class="badge b-open" style="margin-right: 6px;">{{ r.key }}</span> {{ r.label }}
+            </a>
+          </td>
+          <td class="num" style="font-size: 15px; font-weight: 700;">
+            <a href="{{ r.url }}" style="text-decoration: none; color: inherit;">
+              {{ r.count }}
+            </a>
+          </td>
+          <td class="num" style="font-size: 15px; font-weight: 700; color: #1e293b;">
+            <a href="{{ r.url }}" style="text-decoration: none; color: inherit;">
+              {{ r.total_value_fmt }}
+            </a>
+          </td>
+          <td style="text-align: right;">
+            <a class="btn small primary" href="{{ r.url }}">
+              View Offers &rarr;
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- SECTION 2: Visits Follow-Up Due Today / Overdue -->
+<section class="card" style="margin-bottom: 2rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+    <h2 style="margin: 0; font-size: 1.25rem;">Visits Follow-Up Due Today / Overdue</h2>
+    <a class="btn small" href="{{ url_for('followups.index') }}">Follow-up Log &rarr;</a>
+  </div>
+  <p class="muted" style="margin-top: 0; margin-bottom: 1rem; font-size: 13px;">
+    Follow-up actions requiring attention. Overdue items are highlighted in red; today's items are in amber.
+  </p>
+  <div class="table-wrap">
+    <table class="grid">
+      <thead>
+        <tr>
+          <th>Due Date</th>
+          <th>Status</th>
+          <th>Offer Number</th>
+          <th>Customer Name</th>
+          <th>Assigned Engineer</th>
+          <th class="num">Quoted Value</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in followups_due %}
+        <tr class="{{ 'row-red' if f.is_overdue else 'row-yellow' }}">
+          <td><strong>{{ f.next_followup_date|date }}</strong></td>
+          <td>
+            {% if f.is_overdue %}
+              <span class="badge b-overdue-due-now" style="font-weight: 700;">OVERDUE</span>
+            {% else %}
+              <span class="badge b-on-hold" style="font-weight: 700;">DUE TODAY</span>
+            {% endif %}
+            <span class="badge b-{{ (f.status == 'Open' and 'live' or f.status)|slug }}">{{ 'LIVE' if f.status == 'Open' else f.status }}</span>
+          </td>
+          <td><strong>{{ f.offer_no }}</strong></td>
+          <td>{{ f.customer_name }}</td>
+          <td>{{ f.engineer_name or 'Unassigned' }}</td>
+          <td class="num">{{ f.quoted_value|money }}</td>
+          <td>
+            <a class="btn small primary" href="{{ url_for('followups.new', offer_id=f.id) }}">
+              + Add Follow-up
+            </a>
+            <a class="btn small" href="{{ url_for('offers.view', id=f.id) }}#followups">
+              History
+            </a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="empty">No follow-ups due today or overdue. You are all caught up!</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- SECTION 3: Recent Customer Visit Reports -->
+<section class="card" style="margin-bottom: 2rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+    <h2 style="margin: 0; font-size: 1.25rem;">Recent Customer Visit Reports</h2>
     <a class="btn small" href="{{ url_for('visits.index') }}">All Visit Reports &rarr;</a>
   </div>
   <p class="muted" style="margin-top: 0; margin-bottom: 1rem; font-size: 13px;">
@@ -63,7 +149,7 @@
           <td><strong>{{ r.customer_name }}</strong></td>
           <td>
             {% if r.offer_no %}
-              <span class="badge b-open">{{ r.offer_no }}</span>
+              <span class="badge b-live">{{ r.offer_no }}</span>
             {% else %}
               <span class="muted">—</span>
             {% endif %}
@@ -76,6 +162,9 @@
             <a class="btn small primary" href="{{ url_for('visits.view', id=r.id) }}">
               View Report &rarr;
             </a>
+            {% if r.report_file %}
+              <a class="btn small" href="{{ url_for('visits.file', id=r.id, fname='report_file') }}" target="_blank">&#128206; File</a>
+            {% endif %}
           </td>
         </tr>
         {% else %}
@@ -87,156 +176,5 @@
     </table>
   </div>
 </section>
-
-<!-- SECTION 6.2: Visits Follow-Up Due Today / Overdue -->
-{% if g.user.role != 'admin' %}
-<section class="card" style="margin-bottom: 2rem;">
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-    <h2 style="margin: 0; font-size: 1.25rem;">Visits Follow-Up Due Today / Overdue</h2>
-    <a class="btn small" href="{{ url_for('followups.index') }}">Follow-up Log &rarr;</a>
-  </div>
-  <p class="muted" style="margin-top: 0; margin-bottom: 1rem; font-size: 13px;">
-    Follow-up actions requiring your attention. Overdue items are highlighted in red; today's items are in amber.
-  </p>
-  <div class="table-wrap">
-    <table class="grid">
-      <thead>
-        <tr>
-          <th>Due Date</th>
-          <th>Status</th>
-          <th>Offer Number</th>
-          <th>Customer Name</th>
-          <th>Assigned Engineer</th>
-          <th class="num">Quoted Value</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for f in followups_due %}
-        <tr class="{{ 'row-red' if f.is_overdue else 'row-yellow' }}">
-          <td><strong>{{ f.next_followup_date|date }}</strong></td>
-          <td>
-            {% if f.is_overdue %}
-              <span class="badge b-overdue-due-now" style="font-weight: 700;">OVERDUE</span>
-            {% else %}
-              <span class="badge b-on-hold" style="font-weight: 700;">DUE TODAY</span>
-            {% endif %}
-            <span class="badge b-{{ f.status|slug }}">{{ f.status }}</span>
-          </td>
-          <td><strong>{{ f.offer_no }}</strong></td>
-          <td>{{ f.customer_name }}</td>
-          <td>{{ f.engineer_name or 'Unassigned' }}</td>
-          <td class="num">{{ f.quoted_value|money }}</td>
-          <td>
-            <a class="btn small primary" href="{{ url_for('followups.new', offer_id=f.id) }}">
-              + Add Follow-up
-            </a>
-            <a class="btn small" href="{{ url_for('offers.view', id=f.id) }}#followups">
-              History
-            </a>
-          </td>
-        </tr>
-        {% else %}
-        <tr>
-          <td colspan="7" class="empty">No follow-ups due today or overdue. You are all caught up!</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
-{% endif %}
-
-<!-- SECTION 7.3: Marketing Offer Status Updates -->
-{% if has_role(g.user, ['marketing']) or has_role(g.user, ['admin']) %}
-<section class="card" style="margin-bottom: 2rem;">
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-    <h2 style="margin: 0; font-size: 1.25rem;">Offer Status Updates</h2>
-    <span class="badge b-quantity-confirmation">Marketing Controls</span>
-  </div>
-  <p class="muted" style="margin-top: 0; margin-bottom: 1rem; font-size: 13px;">
-    Update offer status to <strong>Received</strong> or <strong>Quantity Confirmation</strong>. Changes are saved and logged immediately.
-  </p>
-
-  <!-- Quick Status Update Card -->
-  <div style="background: #f8fafc; border: 1px solid var(--line); border-radius: 6px; padding: 1rem; margin-bottom: 1.25rem;">
-    <form method="post" action="{{ url_for('dashboard.update_offer_status') }}" style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end;">
-      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-      <div class="field" style="min-width: 260px; margin: 0;">
-        <label for="offer_id" style="font-weight: 600;">Select Offer</label>
-        <select id="offer_id" name="offer_id" required>
-          <option value="">-- Select an offer to update --</option>
-          {% for o in marketing_offers %}
-            <option value="{{ o.id }}">{{ o.offer_no }} - {{ o.customer_name }} [Current: {{ o.status }}]</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="field" style="min-width: 200px; margin: 0;">
-        <label for="status" style="font-weight: 600;">New Status</label>
-        <select id="status" name="status" required>
-          <option value="Received">Received</option>
-          <option value="Quantity Confirmation">Quantity Confirmation</option>
-        </select>
-      </div>
-      <div class="field" style="min-width: 240px; flex: 1; margin: 0;">
-        <label for="remarks" style="font-weight: 600;">Remarks / Notes (optional)</label>
-        <input type="text" id="remarks" name="remarks" placeholder="Optional notes for history log">
-      </div>
-      <button type="submit" class="btn primary" style="height: 38px;">Update Status</button>
-    </form>
-  </div>
-
-  <!-- Active Offers Table with Quick Update Buttons -->
-  <div class="table-wrap">
-    <table class="grid small">
-      <thead>
-        <tr>
-          <th>Offer No</th>
-          <th>Customer</th>
-          <th>Date</th>
-          <th class="num">Quoted Value</th>
-          <th>Current Status</th>
-          <th>Update Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for o in marketing_offers %}
-        <tr>
-          <td><a href="{{ url_for('offers.view', id=o.id) }}"><strong>{{ o.offer_no }}</strong></a></td>
-          <td>{{ o.customer_name }}</td>
-          <td>{{ o.offer_date|date }}</td>
-          <td class="num">{{ o.quoted_value|money }}</td>
-          <td><span class="badge b-{{ o.status|slug }}">{{ o.status }}</span></td>
-          <td>
-            <div style="display: flex; gap: 6px;">
-              {% if o.status != 'Received' %}
-                <form method="post" action="{{ url_for('dashboard.update_offer_status') }}" style="display:inline;">
-                  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-                  <input type="hidden" name="offer_id" value="{{ o.id }}">
-                  <input type="hidden" name="status" value="Received">
-                  <button type="submit" class="btn small" style="background: #2e7d32; color: #fff;" title="Mark as Received">&#10003; Received</button>
-                </form>
-              {% endif %}
-              {% if o.status != 'Quantity Confirmation' %}
-                <form method="post" action="{{ url_for('dashboard.update_offer_status') }}" style="display:inline;">
-                  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-                  <input type="hidden" name="offer_id" value="{{ o.id }}">
-                  <input type="hidden" name="status" value="Quantity Confirmation">
-                  <button type="submit" class="btn small" style="background: #0284c7; color: #fff;" title="Mark as Quantity Confirmation">&#9998; Qty Conf.</button>
-                </form>
-              {% endif %}
-            </div>
-          </td>
-        </tr>
-        {% else %}
-        <tr>
-          <td colspan="6" class="empty">No offers available.</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
-{% endif %}
 
 {% endblock %}

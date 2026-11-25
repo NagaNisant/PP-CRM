@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block title %}Offers Contributing to {{ rating_data.label }} - {{ app_title }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <a class="crumb" href="{{ url_for('dashboard.home') }}" style="display: inline-block; margin-bottom: 0.5rem;">&larr; Back to Dashboard</a>
+    <h1>Offers Contributing to: {{ rating_data.label }}</h1>
+    <p class="muted" style="margin-top: 0.25rem;">
+      Showing <strong>{{ rating_data.count }}</strong> offers contributing to combined total value of <strong>{{ rating_data.total_value_fmt }}</strong>.
+    </p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="{{ url_for('offers.index', f_rating=rating) }}">
+      Open in Offers List &rarr;
+    </a>
+    <a class="btn primary" href="{{ url_for('offers.new') }}">+ New Offer</a>
+  </div>
+</div>
+
+<div class="card" style="margin-top: 1rem;">
+  <div class="table-wrap">
+    <table class="grid">
+      <thead>
+        <tr>
+          <th>Offer No</th>
+          <th>Date</th>
+          <th>Customer</th>
+          <th>Region</th>
+          <th class="num">Quoted Value</th>
+          <th>Rating</th>
+          <th>Status</th>
+          <th>Assigned Engineer</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in rating_data.offers %}
+        <tr>
+          <td><a href="{{ url_for('offers.view', id=o.id) }}"><strong>{{ o.offer_no }}</strong></a></td>
+          <td>{{ o.offer_date|date }}</td>
+          <td>{{ o.customer_name }}</td>
+          <td>{{ o.region }}</td>
+          <td class="num">{{ o.quoted_value|money }}</td>
+          <td><span class="badge b-open">{{ o.rating or '—' }}</span></td>
+          <td><span class="badge b-{{ (o.status == 'Open' and 'live' or o.status)|slug }}">{{ 'LIVE' if o.status == 'Open' else o.status }}</span></td>
+          <td>{{ o.engineer_name or 'Unassigned' }}</td>
+          <td>
+            <a class="btn small primary" href="{{ url_for('offers.view', id=o.id) }}">View Offer &rarr;</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="9" class="empty">No offers found contributing to {{ rating_data.label }}.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if rating_data.offers %}
+      <tfoot>
+        <tr>
+          <td colspan="4"><strong>Total for {{ rating_data.label }} ({{ rating_data.count }} offers)</strong></td>
+          <td class="num"><strong>{{ rating_data.total_value_fmt }}</strong></td>
+          <td colspan="4"></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+{% endblock %}

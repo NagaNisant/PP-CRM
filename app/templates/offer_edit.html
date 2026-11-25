@@ -1,0 +1,159 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import input %}
+{% block title %}Edit Offer - {{ app_title }}{% endblock %}
+{% block content %}
+<h1>Edit Offer</h1>
+
+{# ---- Offer selector bar ---- #}
+<div class="card" style="margin-bottom:1.5rem; padding:1rem 1.5rem;">
+  <div style="display:flex; gap:1rem; align-items:flex-end; flex-wrap:wrap;">
+    <div class="field" style="flex:1; min-width:200px; margin:0;">
+      <label for="select_edit_offer">Select offer</label>
+      <select id="select_edit_offer">
+        <option value="">-- Choose an offer --</option>
+        {% for oid, ono in offers %}
+        <option value="{{ oid }}" {% if row and row.id == oid %}selected{% endif %}>{{ ono }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="display:flex; align-items:center; color:#999; font-weight:600;">OR</div>
+    <div class="field" style="flex:1; min-width:200px; margin:0;">
+      <label for="enter_offer_no">Enter offer number</label>
+      <input type="text" id="enter_offer_no" placeholder="e.g. 0972A">
+    </div>
+    <button type="button" id="btn_load_offer" class="btn primary" style="height:38px;">Load Offer</button>
+  </div>
+  <div id="load_error" class="err" style="display:none; margin-top:0.5rem;"></div>
+</div>
+
+{# ---- Offer edit form (hidden until an offer is loaded) ---- #}
+<div id="offer_form_wrap" {% if not row %}style="display:none"{% endif %}>
+{% if errors %}<div class="flash error">Please correct the highlighted fields.{% for k, m in errors.items() if k.startswith('__') %}<br>{{ m }}{% endfor %}</div>{% endif %}
+<form method="post" enctype="multipart/form-data" class="card" id="offer_edit_form">
+  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+  <input type="hidden" name="_offer_id" id="_offer_id" value="{{ row.id if row else '' }}">
+
+  {% set ns = namespace(section=None) %}
+  {% for f in module.form_fields %}
+    {% if f.section != ns.section or loop.first %}
+      {% if not loop.first %}</div>{% endif %}
+      {% set ns.section = f.section %}
+      {% if f.section %}<h3>{{ f.section }}</h3>{% endif %}<div class="grid-form">
+    {% endif %}
+    {{ input(f, values.get(f.name), errors.get(f.name), editable=module.field_editable(f, g.user),
+             file_value=values.get(f.name) if f.kind == 'file' else None, module=module, parent_id=row.id if row else None) }}
+  {% endfor %}
+  </div>
+
+  <div class="actions sticky">
+    <button class="btn primary">Save Changes</button>
+    <a class="btn" href="{{ url_for('offers.index') }}">Cancel</a>
+  </div>
+</form>
+</div>
+
+<script>
+(function() {
+  var selectEl = document.getElementById('select_edit_offer');
+  var inputEl  = document.getElementById('enter_offer_no');
+  var loadBtn  = document.getElementById('btn_load_offer');
+  var errorEl  = document.getElementById('load_error');
+  var formWrap = document.getElementById('offer_form_wrap');
+  var offerIdEl= document.getElementById('_offer_id');
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.style.display = 'block';
+  }
+  function hideError() {
+    errorEl.style.display = 'none';
+  }
+
+  function fillForm(data) {
+    hideError();
+    offerIdEl.value = data.id;
+    var form = document.getElementById('offer_edit_form');
+    for (var key in data) {
+      if (key === 'id') continue;
+      var el = form.querySelector('[name="' + key + '"]');
+      if (!el) continue;
+      if (el.type === 'file') continue;  // can't set file inputs
+      if (el.tagName === 'SELECT') {
+        // Try to set the matching option
+        var found = false;
+        for (var i = 0; i < el.options.length; i++) {
+          if (el.options[i].value == data[key]) {
+            el.selectedIndex = i;
+            found = true;
+            break;
+          }
+        }
+        // For customer select: set by label text match
+        if (!found && key === 'select_customer') {
+          for (var i = 0; i < el.options.length; i++) {
+            if (el.options[i].text.indexOf(data[key]) === 0) {
+              el.selectedIndex = i;
+              break;
+            }
+          }
+        }
+      } else if (el.type === 'checkbox') {
+        el.checked = (data[key] === '1' || data[key] === 'True' || data[key] === 'true');
+      } else {
+        el.value = data[key] || '';
+      }
+    }
+    formWrap.style.display = '';
+  }
+
+  function loadOffer(params) {
+    hideError();
+    fetch('{{ url_for("offers.get_offer_data") }}?' + params)
+      .then(function(r) { return r.json(); })
+      .then(function(j) {
+        if (j.ok) {
+          fillForm(j.data);
+          // Sync the selector dropdown
+          if (j.data.id) {
+            selectEl.value = j.data.id;
+          }
+        } else {
+          showError(j.error || 'Offer not found.');
+          formWrap.style.display = 'none';
+        }
+      })
+      .catch(function(e) {
+        showError('Failed to load offer: ' + e);
+      });
+  }
+
+  selectEl.addEventListener('change', function() {
+    if (this.value) {
+      loadOffer('id=' + encodeURIComponent(this.value));
+      inputEl.value = '';
+    } else {
+      formWrap.style.display = 'none';
+    }
+  });
+
+  loadBtn.addEventListener('click', function() {
+    var no = inputEl.value.trim();
+    if (no) {
+      selectEl.value = '';
+      loadOffer('offer_no=' + encodeURIComponent(no));
+    } else if (selectEl.value) {
+      loadOffer('id=' + encodeURIComponent(selectEl.value));
+    } else {
+      showError('Please select an offer or enter an offer number.');
+    }
+  });
+
+  inputEl.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      loadBtn.click();
+    }
+  });
+})();
+</script>
+{% endblock %}

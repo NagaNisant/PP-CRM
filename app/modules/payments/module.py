@@ -34,9 +34,9 @@ def prepare(data, old, user):
 module = Module(
     "payments", "Payment received", FIELDS, plural="Payment Received",
     label_sql="{t}.received_date || ' - Rs. ' || {t}.amount",
-    access={"view": [], "create": [], "edit": [], "delete": [], "export": []},  # Admin only
+    access={"view": [], "create": [], "edit": [], "delete": [], "export": []},
     prepare=prepare,
     list_fields=["received_date", "customer_name", "invoice_id", "kind", "amount", "mode", "reference_no"],
-    default_order="received_date DESC, id DESC", nav=("Accounts", 20), new_label="Record payment received",
+    default_order="received_date DESC, id DESC", nav=None, new_label="Record payment received",
     intro="Track payments received from customers.",
 )

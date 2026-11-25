@@ -33,8 +33,8 @@ FIELDS = [
 module = Module(
     "payments_made", "Payment made", FIELDS, plural="Payment Made",
     label_sql="{t}.paid_to || ' - Rs. ' || {t}.amount || ' (' || {t}.payment_date || ')'",
-    access={"view": [], "create": [], "edit": [], "delete": [], "export": []},  # Admin only
+    access={"view": [], "create": [], "edit": [], "delete": [], "export": []},
     list_fields=["payment_date", "paid_to", "category", "amount", "mode", "reference_no", "receipt_pdf"],
-    default_order="payment_date DESC, id DESC", nav=("Accounts", 10), new_label="Record payment made",
+    default_order="payment_date DESC, id DESC", nav=None, new_label="Record payment made",
     intro="Track payments made by the company to vendors, suppliers, and for statutory/operational expenses.",
 )

@@ -6,7 +6,7 @@ and with all review status / approval workflows completely removed.
 from flask import render_template
 from app import choices as C
 from app.core import db, roles as R
-from app.core.fields import Choice, Computed, Date, Email, Phone, Ref, Text, TextArea
+from app.core.fields import Choice, Computed, Date, Email, File, Phone, Ref, Text, TextArea
 from app.core.module import Module
 
 SUGGEST = dict(url="/customers/suggest", fills={
@@ -25,6 +25,7 @@ FIELDS = [
     Email("email", "E-mail id"),
     Text("reason", "Reason of visit", required=True, section="Visit report"),
     TextArea("remark", "Remark / conclusion of visit", required=True),
+    File("report_file", "Upload report (PDF)", accept=(".pdf", ".doc", ".docx", ".xls", ".xlsx", ".png", ".jpg", ".jpeg"), required=False),
     Date("next_followup_date", "Next date of follow-up"),
     Choice("followup_mode", "Mode of follow-up required", choices=C.FOLLOWUP_MODES),
     Computed("offer_no", "Offer no", sql="(SELECT o.offer_no FROM offers o WHERE o.id = t.offer_id)"),
@@ -37,10 +38,8 @@ def scope(user):
 
 
 def row_permission(action, user, row):
-    if action == "edit":
-        if R.is_admin(user):
-            return True
-        return row.get("engineer_id") == user["id"]
+    if action in ("create", "edit"):
+        return R.is_marketing(user)
     return True
 
 
@@ -85,16 +84,28 @@ def index_handler(req, user):
         return render_template("visits/engineers.html", engineers=engineers, can_create=can_create)
 
 
+def visits_can(action, user, row=None):
+    if not user:
+        return False
+    if action in ("view", "export", "comment"):
+        return True
+    if action in ("create", "edit"):
+        # Marketing engineers can create and upload reports. Admin and Application users can only view.
+        return R.is_marketing(user)
+    return False
+
+
 module = Module(
     "visits", "Visit report", FIELDS, plural="Visit reports", label_sql="{t}.customer_name || ' (' || {t}.visit_date || ')'",
-    access={"view": R.ALL, "create": [R.APPLICATION, R.MARKETING], "edit": [R.APPLICATION, R.MARKETING],
+    access={"view": R.ALL, "create": [R.MARKETING], "edit": [R.MARKETING],
             "delete": [], "export": R.ALL},
     scope=scope, row_permission=row_permission, before_save=before_save,
     comments=True, comment_roles=R.ALL,
-    list_fields=["visit_date", "engineer_id", "customer_name", "person_name", "reason", "remark", "next_followup_date"],
+    list_fields=["visit_date", "engineer_id", "customer_name", "person_name", "reason", "remark", "report_file", "next_followup_date"],
     default_order="visit_date DESC, id DESC", nav=("Field work", 10), new_label="Enter visit",
     actions=[],
     widgets=[],
     intro="Customer visit reports submitted by engineers.",
 )
 module.index_handler = index_handler
+module.can = visits_can

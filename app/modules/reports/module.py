@@ -49,7 +49,7 @@ def offers():
             extra += " AND %s = ?" % col
             params.append(request.args[arg])
     in_month = offers_m.query(g.user, where="is_latest=1 AND offer_date BETWEEN ? AND ?" + extra, params=[start, end] + params)["rows"]
-    active = offers_m.query(g.user, where="is_latest=1 AND status='Open'" + extra, params=params)["rows"]
+    active = offers_m.query(g.user, where="is_latest=1 AND status IN ('LIVE', 'Open')" + extra, params=params)["rows"]
     engineers = db.q("SELECT id, full_name FROM users WHERE role IN (%s) AND active=1 ORDER BY full_name" % R.sql_in(R.ENGINEERS))
     month_tbl, active_tbl = _pivot(in_month, group), _pivot(active, group)
     if request.args.get("xlsx"):
@@ -100,4 +100,3 @@ def outstanding():
 
 def register(app):
     app.register_blueprint(bp)
-    nav.add_item("Receivables as of Today", "reports.outstanding", "Accounts", 30, roles=[R.ADMIN])
